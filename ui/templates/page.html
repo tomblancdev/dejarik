@@ -1,0 +1,25 @@
+{{define "page"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Dejarik</title>
+<link rel="stylesheet" href="/static/dejarik.css">
+<script src="/static/htmx-2.0.4.min.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <img class="logo" src="/static/logo-animated.svg" width="640" height="200" alt="Dejarik — let the wookiee win">
+    <div class="who">{{if .Me.User}}{{.Me.User}}{{if .Me.IsAdmin}} · admin{{end}}{{end}}</div>
+  </header>
+  {{range .Blocks}}
+    {{template "console" .Panel}}
+    {{template "clients" .Clients}}
+  {{end}}
+  <footer class="who">dejarik {{.Version}} · <a href="/openapi.json">openapi</a> · every press logged</footer>
+</div>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,102 @@
+{{define "console"}}
+<section class="panel" id="proj-{{.Name}}"
+         hx-get="/panel/{{.Name}}" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML">
+  <div class="grain"></div><div class="scuff"></div>
+  <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+  <div class="stack">
+
+    <div class="between">
+      <div class="eng t11">{{.Label}} // l'arcade</div>
+      <div class="lamps">
+        {{range .Lamps}}
+        <div class="lampset">
+          <div class="lamp {{.Class}}{{if not .On}} off{{end}}"><i></i></div>
+          <div class="eng t9">{{.Label}}</div>
+        </div>
+        {{end}}
+      </div>
+    </div>
+
+    <div class="seam"></div>
+
+    <div class="console">
+      <div class="crt {{.ScreenClass}}">
+        <div class="in">
+          <div class="between"><span>{{.Name}} // l'arcade</span>{{if .UpFor}}<span class="dim">UP {{.UpFor}}</span>{{end}}</div>
+          <div class="hr"></div>
+
+          {{if eq .State "unknown"}}
+            <div class="gone">
+              <div class="big">{{.StateWord}}</div>
+              <div class="dim t11">{{.Reason}}</div>
+            </div>
+            <div class="hr"></div>
+            {{if .Play.OK}}
+              <div><span class="dot"></span> SUNSHINE IS ANSWERING</div>
+              <div class="dim t11">So you can play right now, whatever the watchman thinks.</div>
+            {{else}}
+              <div class="dim t11">{{.Detail}}</div>
+            {{end}}
+          {{else}}
+            <div class="big">{{.StateWord}}</div>
+            <div class="dim t11">{{.Reason}}</div>
+            {{if .Detail}}<div class="dim t11">{{.Detail}}</div>{{end}}
+          {{end}}
+
+          {{if .Chain}}
+          <div class="hr"></div>
+          <div class="row"><span class="dim k">CHAIN</span><span>
+            {{range $i, $l := .Chain}}{{if $i}}<span class="dim"> &gt; </span>{{end}}<span class="dot{{if not $l.Up}} out{{end}}"></span> {{$l.Name}}{{if $l.Busy}} <span class="dim">({{$l.Busy}})</span>{{end}}{{end}}
+          </span></div>
+          {{end}}
+
+          {{if .ShowConnect}}
+          <div class="hr"></div>
+          <div class="row"><span class="dim k">CONNECT</span><span>MOONLIGHT &gt;
+            <span class="addr">{{.Connect.Host}}</span>
+            {{if .Ports}}<br><span class="dim t11">{{.Ports}}</span>{{end}}
+          </span></div>
+          {{if .WaitMinutes}}
+          <div class="dim t11">Nothing here pins the tower — it waits about {{.WaitMinutes}} minutes for you, then stops on its own.</div>
+          {{end}}
+          {{end}}
+
+          {{if .Fault}}
+          <div class="hr"></div>
+          <div class="row"><span class="dim k">FAULT</span><span class="t12">{{.Fault}}</span></div>
+          {{end}}
+        </div>
+      </div>
+
+      <div class="bank">
+        <form method="post" action="/play/{{.Name}}"
+              hx-post="/play/{{.Name}}" hx-target="#proj-{{.Name}}" hx-swap="outerHTML">
+          <button class="pb {{.Button.Class}}" type="submit" {{if .Button.Disabled}}disabled{{end}}>
+            <span class="cap">{{.Button.Label}}</span>
+            {{if .Button.Sub}}<span class="sub">{{.Button.Sub}}</span>{{end}}
+          </button>
+        </form>
+
+        <div class="systems">
+          <div class="eng t10">systems</div>
+          {{range .Lamps}}
+          <div class="sysrow">
+            <div class="lamp {{.Class}}{{if not .On}} off{{end}}"><i></i></div>
+            <div class="eng t11">{{.Label}}</div>
+          </div>
+          {{end}}
+          <div class="sysrow">
+            <div class="eng t9" style="opacity:.7">{{.Watchman.Says}}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="eng t9" style="opacity:.7">state: {{.State}}</div>
+      <div style="margin-left:auto;display:flex;gap:11px"><span class="rivet"></span><span class="rivet"></span><span class="rivet"></span></div>
+      <div class="hazard" style="width:112px"></div>
+    </div>
+  </div>
+</section>
+{{end}}

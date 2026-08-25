@@ -1,0 +1,59 @@
+{{define "clients"}}
+<section class="panel" id="clients-{{.Project}}">
+  <div class="grain"></div><div class="scuff"></div>
+  <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+  <div class="stack">
+
+    <div class="between">
+      <div class="eng t11">my clients{{if .Admin}} // admin view{{end}}</div>
+      <div class="eng t9" style="opacity:.7">{{len .Devices}} paired</div>
+    </div>
+    <div class="seam"></div>
+
+    {{if .Err}}<div class="err">{{.Err}}</div>{{end}}
+    {{if .Notice}}<div class="note">{{.Notice}}</div>{{end}}
+
+    <div class="clients">
+      <div class="stack">
+        {{if .Devices}}
+        <div class="devs">
+          {{range .Devices}}
+          <div class="dev">
+            <form method="post" action="/unpair/{{$.Project}}"
+                  hx-post="/unpair/{{$.Project}}" hx-target="#clients-{{$.Project}}" hx-swap="outerHTML">
+              <input type="hidden" name="uuid" value="{{.UUID}}">
+              <button class="tog" type="submit" title="unpair {{.Name}}"
+                      aria-label="unpair {{.Name}}"><b></b></button>
+            </form>
+            <div class="lamp green{{if not .Mine}} off{{end}}"><i></i></div>
+            <div class="eng t9">{{.Name}}</div>
+            {{if $.Admin}}<div class="eng t9" style="opacity:.6">{{if .By}}{{.By}}{{else}}unclaimed{{end}}</div>{{end}}
+          </div>
+          {{end}}
+        </div>
+        <div class="note">Flip a switch down to unpair that device at Sunshine.</div>
+        {{else}}
+        <div class="note">No devices paired yet. Add the console in Moonlight, then type the PIN it shows you.</div>
+        {{end}}
+      </div>
+
+      <form class="stack" method="post" action="/pair/{{.Project}}"
+            hx-post="/pair/{{.Project}}" hx-target="#clients-{{.Project}}" hx-swap="outerHTML">
+        <div class="eng t10">pair a device — enter pin</div>
+        <div class="pinrow">
+          <input class="win pin" name="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
+                 autocomplete="off" aria-label="the four digits Moonlight showed you" {{if not .Ready}}disabled{{end}}>
+          <input class="field" name="device" maxlength="40" placeholder="name this device"
+                 autocomplete="off" aria-label="name this device" {{if not .Ready}}disabled{{end}}>
+        </div>
+        <button class="pb small" type="submit" {{if not .Ready}}disabled{{end}}>
+          <span class="cap">pair</span>
+        </button>
+        {{if not .Ready}}
+        <div class="note">Pairing needs the console awake — press play first.</div>
+        {{end}}
+      </form>
+    </div>
+  </div>
+</section>
+{{end}}
