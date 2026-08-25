@@ -1,6 +1,13 @@
-{{define "console"}}
-<section class="panel" id="proj-{{.Name}}"
-         hx-get="/panel/{{.Name}}" hx-trigger="every 3s" hx-target="this" hx-swap="outerHTML">
+{{define "project"}}
+{{/* ONE polled element holding BOTH panels. They were separate fragments and
+     only the console half was polled, so a wake left the pairing form greyed
+     out until the page was reloaded by hand. Rendered together, from one
+     view, they cannot disagree. The poll slows down once nothing is moving. */}}
+<div id="project-{{.Panel.Name}}"
+     hx-get="/panel/{{.Panel.Name}}" hx-trigger="every {{.PollSeconds}}s"
+     hx-target="this" hx-swap="outerHTML">
+{{with .Panel}}
+<section class="panel">
   <div class="grain"></div><div class="scuff"></div>
   <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
   <div class="stack">
@@ -70,7 +77,7 @@
 
       <div class="bank">
         <form method="post" action="/play/{{.Name}}"
-              hx-post="/play/{{.Name}}" hx-target="#proj-{{.Name}}" hx-swap="outerHTML">
+              hx-post="/play/{{.Name}}" hx-target="#project-{{.Name}}" hx-swap="outerHTML">
           <button class="pb {{.Button.Class}}" type="submit" {{if .Button.Disabled}}disabled{{end}}>
             <span class="cap">{{.Button.Label}}</span>
             {{if .Button.Sub}}<span class="sub">{{.Button.Sub}}</span>{{end}}
@@ -99,4 +106,7 @@
     </div>
   </div>
 </section>
+{{end}}
+{{template "clients" .Clients}}
+</div>
 {{end}}

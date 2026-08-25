@@ -140,3 +140,39 @@ func TestUnknownProjectIs404(t *testing.T) {
 		t.Fatalf("= %d, want 404", r.Code)
 	}
 }
+
+// The regression that sent me here: the console panel and the pairing form
+// were separate fragments and only the console half was polled, so a wake
+// left the form greyed out until the page was reloaded by hand. They must
+// come back TOGETHER, from one render, or they can drift apart again.
+func TestPolledFragmentCarriesBothPanels(t *testing.T) {
+	h := testServer(t)
+	r := httptest.NewRecorder()
+	q := httptest.NewRequest(http.MethodGet, "/panel/console", nil)
+	q.RemoteAddr = "10.0.0.1:4000"
+	q.Header.Set("Remote-User", "tom")
+	q.Header.Set("Remote-Groups", "admins")
+	h.ServeHTTP(r, q)
+	if r.Code != http.StatusOK {
+		t.Fatalf("= %d", r.Code)
+	}
+	body := r.Body.String()
+	for _, want := range []string{
+		`id="project-console"`, // the one polled element
+		"hx-trigger=\"every ",  // …and it polls itself
+		`class="crt`,           // the console half — its screen, whatever the state
+		"pair a device",        // the clients half, in the SAME response
+		`hx-preserve="true"`,   // typing survives the swap that follows
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("the polled fragment is missing %q — the two halves can drift apart again", want)
+		}
+	}
+	// A preserved node keeps its OLD attributes, so `disabled` must never sit
+	// on one: it would freeze at whatever it was when the page first loaded.
+	for _, line := range strings.Split(body, "\n") {
+		if strings.Contains(line, `hx-preserve="true"`) && strings.Contains(line, "disabled") {
+			t.Fatalf("a preserved input carries `disabled` — it would stay stale forever:\n%s", line)
+		}
+	}
+}

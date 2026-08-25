@@ -92,6 +92,19 @@ People authenticate at the proxy (`Remote-User` / `Remote-Groups`, trusted
 **from the proxy's address only**). Machines carry a bearer token each, so
 the log names which one asked and one can be revoked alone.
 
+## The page is one polled block
+
+The console panel and the pairing form are rendered **together, from one
+view**, inside a single element that re-reads itself. An earlier version
+polled only the console half, so a completed wake left the pairing form
+greyed out until the page was reloaded by hand — two fragments, one state,
+and nothing keeping them honest.
+
+The poll slows from 2 s to 10 s once nothing is moving, and the two inputs
+carry `hx-preserve` so a half-typed PIN survives the swap. Nothing preserved
+may carry `disabled`: a preserved node keeps its old attributes, which is the
+same staleness bug wearing a different hat — there is a test for it.
+
 ## Built like its siblings
 
 One static Go binary, no JavaScript toolchain, no `package.json`. The

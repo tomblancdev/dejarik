@@ -1,5 +1,5 @@
 {{define "clients"}}
-<section class="panel" id="clients-{{.Project}}">
+<section class="panel">
   <div class="grain"></div><div class="scuff"></div>
   <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
   <div class="stack">
@@ -20,7 +20,7 @@
           {{range .Devices}}
           <div class="dev">
             <form method="post" action="/unpair/{{$.Project}}"
-                  hx-post="/unpair/{{$.Project}}" hx-target="#clients-{{$.Project}}" hx-swap="outerHTML">
+                  hx-post="/unpair/{{$.Project}}" hx-target="#project-{{$.Project}}" hx-swap="outerHTML">
               <input type="hidden" name="uuid" value="{{.UUID}}">
               <button class="tog" type="submit" title="unpair {{.Name}}"
                       aria-label="unpair {{.Name}}"><b></b></button>
@@ -38,13 +38,13 @@
       </div>
 
       <form class="stack" method="post" action="/pair/{{.Project}}"
-            hx-post="/pair/{{.Project}}" hx-target="#clients-{{.Project}}" hx-swap="outerHTML">
+            hx-post="/pair/{{.Project}}" hx-target="#project-{{.Project}}" hx-swap="outerHTML">
         <div class="eng t10">pair a device — enter pin</div>
         <div class="pinrow">
-          <input class="win pin" name="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
-                 autocomplete="off" aria-label="the four digits Moonlight showed you" {{if not .Ready}}disabled{{end}}>
-          <input class="field" name="device" maxlength="40" placeholder="name this device"
-                 autocomplete="off" aria-label="name this device" {{if not .Ready}}disabled{{end}}>
+          <input class="win pin" id="pin-{{.Project}}" hx-preserve="true" name="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4"
+                 autocomplete="off" aria-label="the four digits Moonlight showed you">
+          <input class="field" id="device-{{.Project}}" hx-preserve="true" name="device" maxlength="40" placeholder="name this device"
+                 autocomplete="off" aria-label="name this device">
         </div>
         <button class="pb small" type="submit" {{if not .Ready}}disabled{{end}}>
           <span class="cap">pair</span>

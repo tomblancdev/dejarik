@@ -57,7 +57,6 @@ func (s *Server) Handler() http.Handler {
 	// the panel
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /panel/{name}", s.panel)
-	mux.HandleFunc("GET /clients/{name}", s.clientsFragment)
 	mux.HandleFunc("POST /play/{name}", s.play)
 	mux.HandleFunc("POST /pair/{name}", s.pair)
 	mux.HandleFunc("POST /unpair/{name}", s.unpair)
@@ -100,10 +99,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	}
 	page := pageVM{Me: id, Version: s.version}
 	for _, v := range s.svc.Views(r.Context()) {
-		page.Blocks = append(page.Blocks, blockVM{
-			Panel:   present(v),
-			Clients: s.clientsData(r.Context(), v, id, "", ""),
-		})
+		page.Blocks = append(page.Blocks, block(present(v), s.clientsData(r.Context(), v, id, "", "")))
 	}
 	s.render(w, "page", page)
 }
@@ -113,26 +109,12 @@ func (s *Server) panel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_ = id
 	v, found := s.svc.View(r.Context(), r.PathValue("name"))
 	if !found {
 		http.NotFound(w, r)
 		return
 	}
-	s.render(w, "console", present(v))
-}
-
-func (s *Server) clientsFragment(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.who(w, r)
-	if !ok {
-		return
-	}
-	v, found := s.svc.View(r.Context(), r.PathValue("name"))
-	if !found {
-		http.NotFound(w, r)
-		return
-	}
-	s.render(w, "clients", s.clientsData(r.Context(), v, id, "", ""))
+	s.render(w, "project", block(present(v), s.clientsData(r.Context(), v, id, "", "")))
 }
 
 func (s *Server) play(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +136,7 @@ func (s *Server) play(w http.ResponseWriter, r *http.Request) {
 		p.Fault = err.Error()
 		p.Lamps[2].On = true
 	}
-	s.render(w, "console", p)
+	s.render(w, "project", block(p, s.clientsData(r.Context(), v, id, "", "")))
 }
 
 func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +179,7 @@ func (s *Server) afterClients(w http.ResponseWriter, r *http.Request, name strin
 		http.NotFound(w, r)
 		return
 	}
-	s.render(w, "clients", s.clientsData(r.Context(), v, id, errMsg, notice))
+	s.render(w, "project", block(present(v), s.clientsData(r.Context(), v, id, errMsg, notice)))
 }
 
 func (s *Server) clientsData(ctx context.Context, v arcade.View, id auth.Identity, errMsg, notice string) clientsVM {

@@ -104,6 +104,22 @@ type clientsVM struct {
 type blockVM struct {
 	Panel   panelVM
 	Clients clientsVM
+	// PollSeconds is how often the block re-reads itself. Fast while
+	// something is moving, lazy once it has settled: a page sitting at READY
+	// while somebody types a PIN has no reason to be swapped every 3 s.
+	PollSeconds int
+}
+
+// block pairs the two halves and picks the poll rate from the state. They are
+// rendered together, from one view, so they cannot disagree — which is the
+// bug this replaced: only the console half used to be polled, so a wake left
+// the pairing form greyed out until the page was reloaded by hand.
+func block(p panelVM, c clientsVM) blockVM {
+	poll := 10
+	if p.State == arcade.Starting {
+		poll = 2
+	}
+	return blockVM{Panel: p, Clients: c, PollSeconds: poll}
 }
 
 type pageVM struct {

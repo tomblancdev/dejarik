@@ -14,10 +14,7 @@
     <img class="logo" src="/static/logo-animated.svg" width="640" height="200" alt="Dejarik — let the wookiee win">
     <div class="who">{{if .Me.User}}{{.Me.User}}{{if .Me.IsAdmin}} · admin{{end}}{{end}}</div>
   </header>
-  {{range .Blocks}}
-    {{template "console" .Panel}}
-    {{template "clients" .Clients}}
-  {{end}}
+  {{range .Blocks}}{{template "project" .}}{{end}}
   <footer class="who">dejarik {{.Version}} · <a href="/openapi.json">openapi</a> · every press logged</footer>
 </div>
 </body>
