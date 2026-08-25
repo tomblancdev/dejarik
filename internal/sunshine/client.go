@@ -68,6 +68,27 @@ func (c *Client) Answering(ctx context.Context) bool {
 	return bytes.Contains(bytes.ToLower(b), []byte("hostname"))
 }
 
+// flexBool reads Sunshine's `status`, which is a JSON boolean on some
+// endpoints and the STRING "true" on others — and has swapped between
+// versions. Read live from the console 2026-08-25: /api/clients/list answers
+// `"status":true`. Decoding that into a string fails, which would have made
+// a SUCCESSFUL pairing report an error to the person who just did it.
+type flexBool bool
+
+func (b *flexBool) UnmarshalJSON(raw []byte) error {
+	var asBool bool
+	if err := json.Unmarshal(raw, &asBool); err == nil {
+		*b = flexBool(asBool)
+		return nil
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err != nil {
+		return err
+	}
+	*b = flexBool(strings.EqualFold(strings.TrimSpace(asString), "true"))
+	return nil
+}
+
 // Device is one paired client, as Sunshine knows it. Sunshine does not know
 // WHOSE it is — that is the one fact Dejarik keeps for itself.
 type Device struct {
@@ -137,12 +158,12 @@ func (c *Client) Pair(ctx context.Context, pin, name string) error {
 		return fmt.Errorf("sunshine pin: %s", res.Status)
 	}
 	var out struct {
-		Status string `json:"status"`
+		Status flexBool `json:"status"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
 		return err
 	}
-	if !strings.EqualFold(out.Status, "true") {
+	if !bool(out.Status) {
 		return fmt.Errorf("the console did not accept that PIN — it expires after a minute, so ask Moonlight for a new one")
 	}
 	return nil

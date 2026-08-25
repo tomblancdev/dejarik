@@ -114,7 +114,7 @@ file is not.
 
 | | |
 |---|---|
-| `v0.1` | the panel: play, status, my clients. One project. |
+| `v0.1` | the panel: play, status, my clients. One project. Verified against a live Sunshine 2026-08-25 — `named_certs` is the client-list shape, and `status` comes back as a JSON **boolean**, not a string. |
 | next | the library from the console's own catalogue · who is playing what · a lease card once Le Videur lands |
 
 Part of [Le Squat](https://github.com/tomblancdev) — with
