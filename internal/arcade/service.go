@@ -312,7 +312,17 @@ func (s *Service) Metrics(ctx context.Context) string {
 		}
 		fmt.Fprintf(&b, "dejarik_project_playable{project=%q} %d\n", v.Name, n)
 	}
-	b.WriteString("# HELP dejarik_watchman_known Whether Le Veilleur answered on the last pass.\n# TYPE dejarik_watchman_known gauge\n")
+	// Two different questions, two series. "Reachable" is about the watchman;
+	// "known" is about this target — and a guest on a sleeping node is
+	// legitimately unknown every night, so an alert must never watch it.
+	reach := 0
+	for _, v := range views {
+		if v.Reachable {
+			reach = 1
+		}
+	}
+	fmt.Fprintf(&b, "# HELP dejarik_watchman_reachable Whether Le Veilleur answered the last board read.\n# TYPE dejarik_watchman_reachable gauge\ndejarik_watchman_reachable %d\n", reach)
+	b.WriteString("# HELP dejarik_watchman_known Whether Le Veilleur can currently SEE this target (a guest on a sleeping node cannot be seen - that is normal).\n# TYPE dejarik_watchman_known gauge\n")
 	for _, v := range views {
 		n := 0
 		if v.Watchman.Known {

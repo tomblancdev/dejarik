@@ -57,6 +57,14 @@ instead of one.
 | `blocked` | somebody put a **hands-off hold** on it at the watchman | dead |
 | `unknown` | we cannot tell, and say so | plain — "try anyway" |
 
+One more distinction the panel keeps: **"the watchman answered" and "the
+watchman can see this target" are not the same question.** A guest on a
+powered-off node is invisible to the watchman *every night* — that is
+`asleep` (its node is known down, so it cannot be running), never
+`unknown`. `dejarik_watchman_reachable` and `dejarik_watchman_known{project}`
+are separate series for exactly this reason: an alert that watched the
+second would page at bedtime, every day.
+
 `blocked` deliberately does **not** read Le Veilleur's `blocked` field: that
 one records why a machine may not be *stopped* (`min_uptime`, `grace`), which
 would be exactly backwards as a reason a person cannot play. A hands-off hold

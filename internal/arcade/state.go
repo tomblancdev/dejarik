@@ -70,6 +70,13 @@ type View struct {
 	Fault    string `json:"fault,omitempty"`
 	Watchman Truth  `json:"watchman"`
 	Play     Truth  `json:"play"`
+	// Reachable is whether the watchman answered WITH A USABLE PICTURE — it
+	// replied and is not itself blind. That is a different question from
+	// whether it can see this particular target: a guest on a powered-off
+	// node is invisible to it by definition, every night. Conflating the two
+	// would page somebody at 22:20 and make the panel say "can't tell" about
+	// a console that is plainly asleep.
+	Reachable bool `json:"watchman_reachable"`
 }
 
 // CanPlay is the one-line answer.
@@ -106,7 +113,11 @@ func resolve(name string, in inputs) View {
 
 	var self veilleur.Target
 	var found bool
-	if in.boardErr == nil && in.board != nil {
+	haveBoard := in.boardErr == nil && in.board != nil
+	if haveBoard {
+		v.Reachable = in.board.ObserveErr == ""
+	}
+	if haveBoard {
 		for _, t := range in.board.Chain(p.Target) {
 			v.Chain = append(v.Chain, Link{Name: t.Name, Label: t.Label, Up: t.Up, Known: t.Known, Busy: t.Pending})
 			if t.LastError != "" && v.Fault == "" {
@@ -154,9 +165,26 @@ func resolve(name string, in inputs) View {
 	}
 
 	// 3. Nobody can tell us anything.
+	//
+	// Careful here. The watchman not SEEING a target is not the same as the
+	// watchman being unreachable: a guest whose node is powered off is
+	// invisible to it every single night. If a parent is known to be down,
+	// the guest cannot possibly be running — that is `asleep`, and saying
+	// "can't tell" instead would be a nightly lie.
 	if !v.Watchman.Known {
+		if !v.Reachable {
+			v.State = Unknown
+			v.Reason = "Nobody can say whether this should be on — and Sunshine is silent too."
+			v.Detail = v.Watchman.Says
+			return v
+		}
+		if parent, ok := parentDown(v.Chain, name); ok {
+			v.State = Asleep
+			v.Reason = "Nothing is running — " + parent + " is off. Waking it takes about a minute."
+			return v
+		}
 		v.State = Unknown
-		v.Reason = "Nobody can say whether this should be on — and Sunshine is silent too."
+		v.Reason = "The watchman is answering but cannot see this one, and Sunshine is silent."
 		v.Detail = v.Watchman.Says
 		return v
 	}
@@ -195,6 +223,21 @@ func handsOff(b *veilleur.Board, err error, target string) (veilleur.Hold, strin
 		}
 	}
 	return veilleur.Hold{}, "", false
+}
+
+// parentDown finds a machine EARLIER in the chain that is known to be off.
+// The chain is parents first, so anything before the target is something it
+// needs; if one of those is down, nothing after it can be running.
+func parentDown(chain []Link, self string) (string, bool) {
+	for _, l := range chain {
+		if l.Name == self {
+			return "", false
+		}
+		if l.Known && !l.Up {
+			return or(l.Label, l.Name), true
+		}
+	}
+	return "", false
 }
 
 func busyIn(chain []Link) string {

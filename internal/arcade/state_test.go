@@ -96,10 +96,41 @@ func TestHandsOffBlocks(t *testing.T) {
 	})
 }
 
+// The nightly case, and the one that was wrong in v0.1.0: the tower is off,
+// so the watchman cannot SEE the console at all. That is not "can't tell" —
+// a guest whose node is down cannot possibly be running.
+func TestGuestOnASleepingNodeIsAsleepNotUnknown(t *testing.T) {
+	blind := veilleur.Target{Up: false, Known: false} // invisible: its node is off
+	v := resolve("console", inputs{project: project, board: board(down(), blind), answering: false})
+	check(t, v, Asleep)
+	if !v.Reachable {
+		t.Fatal("the watchman answered — reachable must stay true")
+	}
+	if v.Watchman.Known {
+		t.Fatal("the watchman genuinely cannot see it; that must still be reported honestly")
+	}
+	if !contains(v.Reason, "the tower") {
+		t.Fatalf("the reason should name the machine that is off: %q", v.Reason)
+	}
+}
+
+// But an invisible target whose parents are all fine is a real unknown.
+func TestInvisibleWithParentsUpIsUnknown(t *testing.T) {
+	blind := veilleur.Target{Up: false, Known: false}
+	v := resolve("console", inputs{project: project, board: board(up(), blind), answering: false})
+	check(t, v, Unknown)
+	if !v.Reachable {
+		t.Fatal("reachable must stay true — the watchman answered")
+	}
+}
+
 func TestUnknownIsSaidOutLoud(t *testing.T) {
 	t.Run("watchman unreachable", func(t *testing.T) {
 		v := resolve("console", inputs{project: project, boardErr: errors.New("timeout"), answering: false})
 		check(t, v, Unknown)
+		if v.Reachable {
+			t.Fatal("the board read failed — reachable must be false")
+		}
 	})
 	t.Run("watchman is blind", func(t *testing.T) {
 		b := board(down(), down())
