@@ -1,21 +1,24 @@
-# Dejarik — what the lab hands the panel. The real one is templated by the
-# `dejarik` role in le-squat; this is the shape.
+# Dejarik — what an operator hands the panel. The real one is templated by
+# whatever configuration manages it; this is the shape.
 listen: ":8080"
-base_url: "https://dejarik.le-squat.tomblanc.fr"
+# your own word, drawn into the mark. Leave it out and the panel
+# ships its own name — it will never wear somebody else's house.
+house: "Example House"
+base_url: "https://dejarik.example.com"
 timezone: "Europe/Paris"
 data_dir: /data
 
 auth:
   # identity is the proxy's job, and only from its address (the La Loge
   # contract). Anything else gets nothing.
-  trusted_proxies: ["10.10.20.30/32"]
+  trusted_proxies: ["192.0.2.10/32"]
   admin_groups: [admins]
   player_groups: [players]
   # machines: `name:role:token` per line — a Home Assistant button, a script
   tokens_file: /etc/dejarik/tokens
 
 veilleur:
-  url: "http://10.10.20.41:8080"
+  url: "http://192.0.2.20:8080"
   token_env: DEJARIK_VEILLEUR_TOKEN
   timeout: 5s
 
@@ -27,12 +30,12 @@ projects:
     sunshine:
       # the door an unpaired Moonlight reads: no credential, so the second
       # truth survives a wrong or revoked password
-      probe_url: "http://10.10.50.21:47989/serverinfo"
+      probe_url: "http://203.0.113.21:47989/serverinfo"
       # the web UI's API: pair, list, unpair. Named endpoints only.
-      admin_url: "https://10.10.50.21:47990"
+      admin_url: "https://203.0.113.21:47990"
       basic_auth_env: DEJARIK_SUNSHINE_BASIC_CONSOLE
       timeout: 3s
     connect:
-      host: "10.10.50.21"
+      host: "203.0.113.21"
       tcp: [47984, 47989, 48010]
       udp: ["47998-48000"]

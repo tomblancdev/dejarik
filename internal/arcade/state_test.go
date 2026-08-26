@@ -12,14 +12,14 @@ var project = config.Project{
 	Label:       "The console",
 	Target:      "console",
 	WaitMinutes: 10,
-	Connect:     config.Connect{Host: "10.10.50.21", TCP: []int{47989}},
+	Connect:     config.Connect{Host: "203.0.113.21", TCP: []int{47989}},
 }
 
-// board builds a two-link fleet: muscle1 (the tower) <- console.
+// board builds a two-link fleet: tower (the tower) <- console.
 func board(tower, console veilleur.Target) *veilleur.Board {
-	tower.Name, console.Name = "muscle1", "console"
+	tower.Name, console.Name = "tower", "console"
 	tower.Label, console.Label = "the tower", "the console"
-	console.Needs = []string{"muscle1"}
+	console.Needs = []string{"tower"}
 	return &veilleur.Board{Targets: []veilleur.Target{tower, console}}
 }
 
@@ -167,7 +167,7 @@ func TestWakingAndAsleep(t *testing.T) {
 // the button stay live so a person can try again.
 func TestFaultIsIndependentOfState(t *testing.T) {
 	m := down()
-	m.LastError = "raising muscle1: magic packet sent, no answer in 3m"
+	m.LastError = "raising tower: magic packet sent, no answer in 3m"
 	v := resolve("console", inputs{project: project, board: board(m, down()), answering: false})
 	check(t, v, Asleep)
 	if v.Fault == "" {
@@ -180,8 +180,8 @@ func TestFaultIsIndependentOfState(t *testing.T) {
 
 func TestChainIsParentsFirst(t *testing.T) {
 	v := resolve("console", inputs{project: project, board: board(up(), up()), answering: true})
-	if len(v.Chain) != 2 || v.Chain[0].Name != "muscle1" || v.Chain[1].Name != "console" {
-		t.Fatalf("chain = %+v, want muscle1 then console", v.Chain)
+	if len(v.Chain) != 2 || v.Chain[0].Name != "tower" || v.Chain[1].Name != "console" {
+		t.Fatalf("chain = %+v, want tower then console", v.Chain)
 	}
 }
 

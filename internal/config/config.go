@@ -17,7 +17,10 @@ import (
 
 // Config is the whole file.
 type Config struct {
-	Listen   string             `yaml:"listen"`
+	Listen string `yaml:"listen"`
+	// House is the operator's own word, substituted into the mark. Empty
+	// (the default) ships the panel's own name and names nobody else.
+	House    string             `yaml:"house"`
 	BaseURL  string             `yaml:"base_url"`
 	Timezone string             `yaml:"timezone"`
 	DataDir  string             `yaml:"data_dir"`

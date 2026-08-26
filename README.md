@@ -1,4 +1,4 @@
-<p align="center"><img src="ui/static/logo-animated.svg" alt="Le Squat — dejarik // let the wookiee win" width="640"></p>
+<p align="center"><img src="ui/static/logo-animated.svg" alt="dejarik — let the wookiee win" width="640"></p>
 
 # Dejarik
 
@@ -130,9 +130,28 @@ file is not.
 | `v0.1` | the panel: play, status, my clients. One project. Verified against a live Sunshine 2026-08-25 — `named_certs` is the client-list shape, and `status` comes back as a JSON **boolean**, not a string. |
 | next | the library from the console's own catalogue · who is playing what · a lease card once Le Videur lands |
 
-Part of [Le Squat](https://github.com/tomblancdev) — with
-[La Loge](https://github.com/tomblancdev/la-loge) (the Wi-Fi front desk),
-[Le Veilleur](https://github.com/tomblancdev/veilleur) (the watchman) and
-[Le Videur](https://github.com/tomblancdev/videur) (the bouncer).
+## This repo carries no environment
 
-MIT.
+Addresses, hostnames, domains, VLAN and group names and the house word belong
+to whoever runs it; the only thing crossing between a deployment and this repo
+is a pinned image tag. Examples and tests use the documentation reserves —
+`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24` (RFC 5737),
+`00:00:5E:00:53:xx` (RFC 7042), `example.com` (RFC 2606) — so nothing here
+describes a real network. CI enforces it with a grep that fails the build, and
+the mark ships carrying the product's name: set `house:` in the config and
+the wordmark is redrawn with it at request time, so the same binary shows
+`DEJARIK` to a stranger and somebody's house to the people who run it.
+
+## Family
+
+Dejarik talks to [Le Veilleur](https://github.com/tomblancdev/veilleur) (the
+watchman that owns power) and sits beside
+[Le Videur](https://github.com/tomblancdev/videur) (the bouncer that owns
+temporary openings) and [La Loge](https://github.com/tomblancdev/la-loge) (the
+Wi-Fi front desk).
+
+## License
+
+MIT — Tom Blanc. The mark and the faces belong to the
+[La Loge](https://github.com/tomblancdev/la-loge) family (Big Shoulders
+Stencil + IBM Plex Mono, OFL, embedded).

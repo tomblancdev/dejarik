@@ -49,7 +49,7 @@ func loadFrom(t *testing.T) (*config.Config, error) {
 listen: ":0"
 data_dir: `+t.TempDir()+`
 auth:
-  trusted_proxies: ["10.0.0.1/32"]
+  trusted_proxies: ["192.0.2.10/32"]
   admin_groups: [admins]
   player_groups: [players]
 veilleur:
@@ -64,7 +64,7 @@ projects:
       probe_url: "http://127.0.0.1:9/serverinfo"
       timeout: 200ms
     connect:
-      host: "10.10.50.21"
+      host: "203.0.113.21"
       tcp: [47989]
 `), 0o600); err != nil {
 		return nil, err
@@ -96,10 +96,10 @@ func TestHeadersOnlyFromTheProxy(t *testing.T) {
 		h.ServeHTTP(r, q)
 		return r.Code
 	}
-	if got := req("10.0.0.9"); got != http.StatusUnauthorized {
+	if got := req("192.0.2.99"); got != http.StatusUnauthorized {
 		t.Fatalf("forged headers from an untrusted address = %d, want 401", got)
 	}
-	if got := req("10.0.0.1"); got != http.StatusOK {
+	if got := req("192.0.2.10"); got != http.StatusOK {
 		t.Fatalf("headers from the proxy = %d, want 200", got)
 	}
 }
@@ -110,7 +110,7 @@ func TestPanelRendersWithEverythingDown(t *testing.T) {
 	h := testServer(t)
 	r := httptest.NewRecorder()
 	q := httptest.NewRequest(http.MethodGet, "/", nil)
-	q.RemoteAddr = "10.0.0.1:4000"
+	q.RemoteAddr = "192.0.2.10:4000"
 	q.Header.Set("Remote-User", "tom")
 	q.Header.Set("Remote-Groups", "admins")
 	h.ServeHTTP(r, q)
@@ -132,7 +132,7 @@ func TestUnknownProjectIs404(t *testing.T) {
 	h := testServer(t)
 	r := httptest.NewRecorder()
 	q := httptest.NewRequest(http.MethodGet, "/api/projects/nope", nil)
-	q.RemoteAddr = "10.0.0.1:4000"
+	q.RemoteAddr = "192.0.2.10:4000"
 	q.Header.Set("Remote-User", "tom")
 	q.Header.Set("Remote-Groups", "admins")
 	h.ServeHTTP(r, q)
@@ -149,7 +149,7 @@ func TestPolledFragmentCarriesBothPanels(t *testing.T) {
 	h := testServer(t)
 	r := httptest.NewRecorder()
 	q := httptest.NewRequest(http.MethodGet, "/panel/console", nil)
-	q.RemoteAddr = "10.0.0.1:4000"
+	q.RemoteAddr = "192.0.2.10:4000"
 	q.Header.Set("Remote-User", "tom")
 	q.Header.Set("Remote-Groups", "admins")
 	h.ServeHTTP(r, q)

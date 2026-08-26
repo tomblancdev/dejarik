@@ -43,6 +43,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /openapi.json", s.openapi)
+	// the mark is rendered, not served: the operator's house word goes in it
+	mux.HandleFunc("GET /static/logo-animated.svg", s.mark)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(ui.Static)))
 
 	// the API is the product; the panel below is a client of these
@@ -61,6 +63,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /pair/{name}", s.pair)
 	mux.HandleFunc("POST /unpair/{name}", s.unpair)
 	return mux
+}
+
+func (s *Server) mark(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	_, _ = w.Write(ui.Lockup(s.cfg.House))
 }
 
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
