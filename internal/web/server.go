@@ -161,6 +161,7 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	var errMsg, notice string
 	if err := s.svc.Pair(r.Context(), name, r.FormValue("pin"), r.FormValue("device"), r.FormValue("for"), id); err != nil {
+		s.log.Warn("pair refused", "project", name, "by", id.User, "for", r.FormValue("for"), "err", err)
 		errMsg = err.Error()
 	} else {
 		notice = "Paired. " + strings.TrimSpace(r.FormValue("device")) + " can stream now."
@@ -179,6 +180,7 @@ func (s *Server) point(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	var errMsg, notice string
 	if err := s.svc.Point(r.Context(), name, r.FormValue("uuid"), r.FormValue("for"), id); err != nil {
+		s.log.Warn("point refused", "project", name, "by", id.User, "uuid", r.FormValue("uuid"), "for", r.FormValue("for"), "err", err)
 		errMsg = err.Error()
 	} else {
 		notice = "Pointed at " + strings.TrimSpace(r.FormValue("for")) + "'s drawer. It opens there from its next connection."
@@ -194,6 +196,7 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	var errMsg, notice string
 	if err := s.svc.Stop(r.Context(), name, r.FormValue("id"), id); err != nil {
+		s.log.Warn("stop refused", "project", name, "by", id.User, "seat", r.FormValue("id"), "err", err)
 		errMsg = err.Error()
 	} else {
 		notice = "Seat closed."
@@ -209,6 +212,7 @@ func (s *Server) unpair(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	var errMsg, notice string
 	if err := s.svc.Unpair(r.Context(), name, r.FormValue("uuid"), id); err != nil {
+		s.log.Warn("unpair refused", "project", name, "by", id.User, "uuid", r.FormValue("uuid"), "err", err)
 		errMsg = err.Error()
 	} else {
 		notice = "Unpaired. That device has to pair again to stream."

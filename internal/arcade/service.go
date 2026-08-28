@@ -272,9 +272,9 @@ type Device struct {
 	// Pointed is false for a device the engine paired that nobody has yet
 	// sent to a drawer: it works, in a drawer of its own that belongs to
 	// nobody, until an admin points it.
-	Pointed bool      `json:"pointed"`
-	Mine    bool      `json:"mine"`
-	Since   time.Time `json:"since,omitempty"`
+	Pointed bool       `json:"pointed"`
+	Mine    bool       `json:"mine"`
+	Since   *time.Time `json:"since,omitempty"`
 }
 
 // Devices lists what is paired. A player sees their own; an admin sees all,
@@ -294,7 +294,8 @@ func (s *Service) Devices(ctx context.Context, name string, who auth.Identity) (
 		for _, d := range list {
 			dev := Device{UUID: d.ID, Name: "device " + short(d.ID)}
 			if o, ok := s.st.Of(d.ID); ok {
-				dev.Name, dev.By, dev.Since = or(o.Device, dev.Name), o.By, o.At
+				at := o.At
+				dev.Name, dev.By, dev.Since = or(o.Device, dev.Name), o.By, &at
 			}
 			if person, known := p.Drawer(d.Folder); known {
 				dev.For, dev.Label, dev.Shared, dev.Pointed = d.Folder, person.Label, person.Shared, true
@@ -313,7 +314,8 @@ func (s *Service) Devices(ctx context.Context, name string, who auth.Identity) (
 		for _, d := range list {
 			dev := Device{UUID: d.UUID, Name: d.Name, Pointed: true}
 			if o, ok := s.st.Of(d.UUID); ok {
-				dev.By, dev.Since = o.By, o.At
+				at := o.At
+				dev.By, dev.Since = o.By, &at
 				dev.Mine = strings.EqualFold(o.By, who.User)
 			}
 			if !who.IsAdmin() && !dev.Mine {

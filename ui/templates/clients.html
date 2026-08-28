@@ -30,10 +30,13 @@
             {{if eq $.Engine "wolf"}}
               <div class="eng t9" style="opacity:.6">{{if .Pointed}}{{.Label}}{{if .Shared}} · shared{{end}}{{else}}nobody's drawer{{end}}</div>
               {{if $.Admin}}
-              <form method="post" action="/point/{{$.Project}}" style="display:flex;gap:6px;align-items:center"
+              {{/* autocomplete=off: a browser restores a form's last values on
+                   reload, and this select would show the drawer it remembered
+                   instead of the one the engine says until the next poll */}}
+              <form method="post" action="/point/{{$.Project}}" style="display:flex;gap:6px;align-items:center" autocomplete="off"
                     hx-post="/point/{{$.Project}}" hx-target="#project-{{$.Project}}" hx-swap="outerHTML">
                 <input type="hidden" name="uuid" value="{{.UUID}}">
-                <select class="field" name="for" aria-label="point {{.Name}} at a drawer">
+                <select class="field" name="for" autocomplete="off" aria-label="point {{.Name}} at a drawer">
                   {{range $.Drawers}}<option value="{{.Name}}"{{if eq .Name $dev.For}} selected{{end}}>{{.Label}}{{if .Shared}} (shared){{end}}</option>{{end}}
                 </select>
                 <button class="pb small" type="submit"><span class="cap">point</span></button>
@@ -51,7 +54,7 @@
         {{end}}
       </div>
 
-      <form class="stack" method="post" action="/pair/{{.Project}}"
+      <form class="stack" method="post" action="/pair/{{.Project}}" autocomplete="off"
             hx-post="/pair/{{.Project}}" hx-target="#project-{{.Project}}" hx-swap="outerHTML">
         <div class="eng t10">pair a device — enter pin</div>
         <div class="pinrow">
@@ -61,7 +64,8 @@
                  autocomplete="off" aria-label="name this device">
         </div>
         {{if and (eq .Engine "wolf") .Admin}}
-        <select class="field" id="for-{{.Project}}" hx-preserve="true" name="for" aria-label="whose drawer this device opens">
+        <div class="eng t9" style="opacity:.7">for whose drawer — the device you are about to pair</div>
+        <select class="field" id="for-{{.Project}}" hx-preserve="true" name="for" autocomplete="off" aria-label="whose drawer the device you are about to pair opens">
           {{range .Drawers}}<option value="{{.Name}}"{{if eq .Name $.Me}} selected{{end}}>{{.Label}}{{if .Shared}} (shared){{end}}</option>{{end}}
         </select>
         {{end}}

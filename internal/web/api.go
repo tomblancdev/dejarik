@@ -111,6 +111,7 @@ func (s *Server) apiPair(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, arcade.ErrNoProject):
 		fail(w, http.StatusNotFound, "no such project")
 	case err != nil:
+		s.log.Warn("pair refused", "project", r.PathValue("name"), "by", id.User, "for", body.For, "err", err)
 		fail(w, http.StatusBadRequest, err.Error())
 	default:
 		writeJSON(w, http.StatusCreated, map[string]string{"device": body.Device, "by": id.User, "for": body.For})
@@ -137,6 +138,7 @@ func (s *Server) apiPoint(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, arcade.ErrNoProject):
 		fail(w, http.StatusNotFound, "no such project")
 	case err != nil:
+		s.log.Warn("point refused", "project", r.PathValue("name"), "by", id.User, "uuid", r.PathValue("uuid"), "for", body.For, "err", err)
 		fail(w, http.StatusForbidden, err.Error())
 	default:
 		writeJSON(w, http.StatusOK, map[string]string{"uuid": r.PathValue("uuid"), "for": body.For, "by": id.User})
@@ -176,6 +178,7 @@ func (s *Server) apiStop(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, arcade.ErrNoProject):
 		fail(w, http.StatusNotFound, "no such project")
 	case err != nil:
+		s.log.Warn("stop refused", "project", r.PathValue("name"), "by", id.User, "seat", r.PathValue("id"), "err", err)
 		fail(w, http.StatusForbidden, err.Error())
 	default:
 		w.WriteHeader(http.StatusNoContent)
@@ -192,6 +195,7 @@ func (s *Server) apiUnpair(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, arcade.ErrNoProject):
 		fail(w, http.StatusNotFound, "no such project")
 	case err != nil:
+		s.log.Warn("unpair refused", "project", r.PathValue("name"), "by", id.User, "uuid", r.PathValue("uuid"), "err", err)
 		fail(w, http.StatusForbidden, err.Error())
 	default:
 		w.WriteHeader(http.StatusNoContent)
