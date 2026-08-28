@@ -32,6 +32,9 @@ type Service struct {
 	log  *slog.Logger
 	now  func() time.Time
 
+	// how long a pairing waits for the engine to list the new client
+	pairWait time.Duration
+
 	mu      sync.Mutex
 	views   map[string]View
 	fresh   time.Time
@@ -68,6 +71,7 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger) (*Service, error
 		st:       st,
 		log:      log,
 		now:      time.Now,
+		pairWait: 25 * time.Second,
 		views:    map[string]View{},
 		ttl:      2 * time.Second,
 		asked:    map[string]time.Time{},
@@ -103,6 +107,9 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger) (*Service, error
 
 // SetClock is for tests.
 func (s *Service) SetClock(f func() time.Time) { s.now = f }
+
+// SetPairWait is for tests.
+func (s *Service) SetPairWait(d time.Duration) { s.pairWait = d }
 
 // Run keeps the truths fresh while nobody has the page open — the guard has
 // to watch the seats whether or not somebody is looking. Returns when ctx
@@ -409,37 +416,53 @@ func (s *Service) Pair(ctx context.Context, name, pin, device, forWhom string, w
 		s.log.Warn("pair failed", "project", name, "by", who.User, "err", err)
 		return fmt.Errorf("%s did not accept that PIN — it expires after a minute, so ask Moonlight for a new one (%v)", or(p.Label, name), err)
 	}
-	after, err := wc.Devices(ctx)
+	// Answering the PIN resolves the engine's side; the CLIENT is added to
+	// its list only when Moonlight finishes the handshake, a few round-trips
+	// later (read live: ~10 s on a TV). So wait for it, rather than read the
+	// list once and find nothing — which is what the first version did.
+	fresh, err := s.awaitFresh(ctx, wc, p, known)
 	if err != nil {
-		return fmt.Errorf("paired, but the device list would not read back — an admin can point the new device from the list: %w", err)
-	}
-	// the new client: the id that was not there before; failing that (a
-	// device pairing AGAIN keeps its id), the one the engine left in a
-	// folder that is nobody's drawer
-	var fresh *wolf.Device
-	for i := range after {
-		if !known[after[i].ID] {
-			fresh = &after[i]
-			break
-		}
-	}
-	if fresh == nil {
-		for i := range after {
-			if _, isDrawer := p.Drawer(after[i].Folder); !isDrawer {
-				fresh = &after[i]
-				break
-			}
-		}
-	}
-	if fresh == nil {
-		return fmt.Errorf("paired, but no new device showed up in the engine's list — an admin can point it from the list")
+		s.log.Warn("paired, but not pointed", "project", name, "by", who.User, "for", drawer, "err", err)
+		return fmt.Errorf("paired, but %v — an admin can point the new device from the list", err)
 	}
 	if err := wc.Point(ctx, fresh.ID, drawer, person.UID, person.GID); err != nil {
+		s.log.Warn("paired, but not pointed", "project", name, "by", who.User, "for", drawer, "uuid", fresh.ID, "err", err)
 		return fmt.Errorf("paired, but pointing the device at %s's drawer failed — an admin can point it from the list: %w", drawer, err)
 	}
 	_ = s.st.Claim(store.Owner{UUID: fresh.ID, Project: name, Device: device, By: who.User, For: drawer})
 	s.paired(name, device, drawer, who)
 	return nil
+}
+
+// awaitFresh waits for the client a pairing just created: the id that was
+// not there before; failing that (a device pairing AGAIN keeps its id), the
+// one the engine left in a folder that is nobody's drawer.
+func (s *Service) awaitFresh(ctx context.Context, wc *wolf.Client, p config.Project, known map[string]bool) (*wolf.Device, error) {
+	deadline := time.Now().Add(s.pairWait)
+	for {
+		after, err := wc.Devices(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("the device list would not read back: %w", err)
+		}
+		for i := range after {
+			if !known[after[i].ID] {
+				return &after[i], nil
+			}
+		}
+		for i := range after {
+			if _, isDrawer := p.Drawer(after[i].Folder); !isDrawer {
+				return &after[i], nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("no new device showed up in the engine's list within %s", s.pairWait)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 func (s *Service) paired(name, device, drawer string, who auth.Identity) {

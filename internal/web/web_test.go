@@ -214,10 +214,18 @@ func (f *fakeWolf) handler() http.Handler {
 	})
 	mux.HandleFunc("POST /api/v1/pair/client", func(w http.ResponseWriter, _ *http.Request) {
 		f.mu.Lock()
-		defer f.mu.Unlock()
 		f.pending = false
 		f.next++
-		f.clients = append(f.clients, map[string]any{"client_id": fmt.Sprint(f.next), "app_state_folder": "hash" + fmt.Sprint(f.next), "settings": map[string]any{"run_uid": 3999, "run_gid": 3000}})
+		id := f.next
+		f.mu.Unlock()
+		// the real engine lists the client only when Moonlight finishes its
+		// handshake, well after the PIN is answered — the panel has to wait
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			f.clients = append(f.clients, map[string]any{"client_id": fmt.Sprint(id), "app_state_folder": "hash" + fmt.Sprint(id), "settings": map[string]any{"run_uid": 3999, "run_gid": 3000}})
+		}()
 		ok(w, map[string]any{"success": true})
 	})
 	mux.HandleFunc("GET /api/v1/clients", func(w http.ResponseWriter, _ *http.Request) {
@@ -339,6 +347,7 @@ projects:
 	now := time.Date(2026, 1, 1, 20, 0, 0, 0, time.UTC)
 	var mu sync.Mutex
 	svc.SetClock(func() time.Time { mu.Lock(); defer mu.Unlock(); return now })
+	svc.SetPairWait(3 * time.Second)
 	tick := func(t time.Time) { mu.Lock(); now = t; mu.Unlock() }
 	s, err := New(c, svc, au, "test", log)
 	if err != nil {
