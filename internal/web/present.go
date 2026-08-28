@@ -116,6 +116,7 @@ type clientsVM struct {
 	Devices   []arcade.Device
 	Seats     []arcade.Seat
 	Refusal   arcade.Refusal
+	Rooms     []arcade.Room
 	Err       string
 	Notice    string
 }

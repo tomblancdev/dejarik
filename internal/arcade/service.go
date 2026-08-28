@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -46,13 +47,27 @@ type Service struct {
 	unpairs int
 
 	// the seats of every appliance, as last read and joined to their
-	// drawers; the guards' memory (guard.go); what the guard did
+	// drawers; the engine's sessions whole, by id (a room is opened from
+	// one); the apps whole, by id (a room is opened on one); the guards'
+	// memory (guard.go); what the guard did
 	seats    map[string][]Seat
-	titles   map[string]map[string]string
+	live     map[string]map[string]wolf.Session
+	apps     map[string]map[string]wolf.App
 	guards   map[string]*guard
 	refusals map[string]int
 	stops    map[string]int
 	lastNo   map[string]Refusal
+
+	// the rooms of every appliance (foyer.go): as last read, when each was
+	// first seen, the PINs of the ones this program opened, the counters
+	rooms     map[string][]Room
+	roomFirst map[string]map[string]time.Time
+	pins      map[string][]int
+	opened    map[string]int
+	joins     map[string]int
+	roomNo    map[string]int
+	roomStops map[string]int
+	foyer     map[string][]*net.IPNet
 }
 
 // New wires the clients. Secrets arrive by environment, never from the
@@ -78,18 +93,36 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger) (*Service, error
 		lastWk:   map[string]float64{},
 		wakes:    map[string]int{},
 		seats:    map[string][]Seat{},
-		titles:   map[string]map[string]string{},
+		live:     map[string]map[string]wolf.Session{},
+		apps:     map[string]map[string]wolf.App{},
 		guards:   map[string]*guard{},
 		refusals: map[string]int{},
 		stops:    map[string]int{},
 		lastNo:   map[string]Refusal{},
+		rooms:     map[string][]Room{},
+		roomFirst: map[string]map[string]time.Time{},
+		pins:      map[string][]int{},
+		opened:    map[string]int{},
+		joins:     map[string]int{},
+		roomNo:    map[string]int{},
+		roomStops: map[string]int{},
+		foyer:     map[string][]*net.IPNet{},
 	}
 	for _, n := range cfg.Names() {
 		p := cfg.Projects[n]
 		if p.Engine() == "wolf" {
 			s.wolf[n] = wolf.New(p.Wolf.ProbeURL, p.Wolf.APIURL, p.Wolf.Timeout.D())
 			s.guards[n] = newGuard()
-			s.titles[n] = map[string]string{}
+			s.apps[n] = map[string]wolf.App{}
+			s.live[n] = map[string]wolf.Session{}
+			s.roomFirst[n] = map[string]time.Time{}
+			if p.HasFoyer() {
+				nets, err := parseSources(p.Foyer.Sources)
+				if err != nil {
+					return nil, fmt.Errorf("project %s: foyer sources: %w", n, err)
+				}
+				s.foyer[n] = nets
+			}
 			continue
 		}
 		basic := ""
@@ -152,6 +185,7 @@ func (s *Service) refresh(ctx context.Context) {
 
 	out := make(map[string]View, len(s.cfg.Projects))
 	seats := map[string][]Seat{}
+	rooms := map[string][]Room{}
 	for _, n := range s.cfg.Names() {
 		p := s.cfg.Projects[n]
 		answering := s.answering(ctx, n)
@@ -159,9 +193,15 @@ func (s *Service) refresh(ctx context.Context) {
 		if _, isWolf := s.wolf[n]; isWolf {
 			if answering {
 				seats[n] = s.readSeats(ctx, n, p)
+				rooms[n] = s.readRooms(ctx, n, p)
 			} else {
 				s.guards[n].observe(nil, s.now())
 				seats[n] = nil
+				rooms[n] = nil
+				s.mu.Lock()
+				s.live[n] = map[string]wolf.Session{}
+				s.roomFirst[n] = map[string]time.Time{}
+				s.mu.Unlock()
 			}
 		}
 	}
@@ -183,6 +223,9 @@ func (s *Service) refresh(ctx context.Context) {
 	}
 	for n, ss := range seats {
 		s.seats[n] = ss
+	}
+	for n, rr := range rooms {
+		s.rooms[n] = rr
 	}
 }
 
@@ -600,6 +643,10 @@ type Seat struct {
 	Mode   string    `json:"mode,omitempty"`
 	Since  time.Time `json:"since"`
 	Mine   bool      `json:"mine"`
+	// Hub marks a seat on the Foyer tile: the page itself, stateless, so
+	// the one-drawer-one-seat guard leaves it alone (a person's phone and
+	// the TV both sitting in the Foyer are not two games on one save).
+	Hub bool `json:"hub,omitempty"`
 }
 
 // Refusal is the last thing the guard did on a project, in words.
@@ -633,8 +680,10 @@ func (s *Service) readSeats(ctx context.Context, n string, p config.Project) []S
 	now := s.now()
 	first := s.guards[n].observe(ss, now)
 
+	live := make(map[string]wolf.Session, len(ss))
 	seats := make([]Seat, 0, len(ss))
 	for _, x := range ss {
+		live[x.ID] = x
 		st := Seat{ID: x.ID, AppID: x.AppID, App: or(titles[x.AppID], "app "+x.AppID), Device: x.IP, Since: first[x.ID]}
 		if x.Width > 0 {
 			st.Mode = fmt.Sprintf("%d×%d @ %d", x.Width, x.Height, x.FPS)
@@ -642,8 +691,12 @@ func (s *Service) readSeats(ctx context.Context, n string, p config.Project) []S
 		if who, ok := personByUID(p, x.UID); ok {
 			st.Person, st.Label, st.Shared = who, p.People[who].Label, p.People[who].Shared
 		}
+		st.Hub = p.HasFoyer() && st.App == p.Foyer.Title
 		seats = append(seats, st)
 	}
+	s.mu.Lock()
+	s.live[n] = live
+	s.mu.Unlock()
 
 	// one drawer, one open seat (guard.go)
 	closed := map[string]bool{}
@@ -682,10 +735,10 @@ func (s *Service) readSeats(ctx context.Context, n string, p config.Project) []S
 }
 
 // titlesFor names the apps of the sessions given, reading the engine's list
-// once per unknown id.
+// once per unknown id. The apps are kept whole: a room is opened on one.
 func (s *Service) titlesFor(ctx context.Context, n string, ss []wolf.Session) map[string]string {
 	s.mu.Lock()
-	cache := s.titles[n]
+	cache := s.apps[n]
 	missing := false
 	for _, x := range ss {
 		if _, ok := cache[x.AppID]; !ok {
@@ -694,21 +747,30 @@ func (s *Service) titlesFor(ctx context.Context, n string, ss []wolf.Session) ma
 	}
 	s.mu.Unlock()
 	if missing {
-		if apps, err := s.wolf[n].Apps(ctx); err == nil {
-			s.mu.Lock()
-			for _, a := range apps {
-				cache[a.ID] = a.Title
-			}
-			s.mu.Unlock()
-		}
+		s.readApps(ctx, n)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make(map[string]string, len(cache))
-	for k, v := range cache {
-		out[k] = v
+	out := make(map[string]string, len(s.apps[n]))
+	for k, v := range s.apps[n] {
+		out[k] = v.Title
 	}
 	return out
+}
+
+// readApps refreshes the engine's app list — what a room may be opened on.
+func (s *Service) readApps(ctx context.Context, n string) {
+	apps, err := s.wolf[n].Apps(ctx)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cache := make(map[string]wolf.App, len(apps))
+	for _, a := range apps {
+		cache[a.ID] = a
+	}
+	s.apps[n] = cache
 }
 
 // Seats lists the open seats of a project. A player sees their own and the
@@ -844,6 +906,36 @@ func (s *Service) Metrics(ctx context.Context) string {
 	for _, v := range views {
 		if _, isWolf := s.wolf[v.Name]; isWolf {
 			fmt.Fprintf(&b, "dejarik_seat_stops_total{project=%q} %d\n", v.Name, s.stops[v.Name])
+		}
+	}
+	b.WriteString("# HELP dejarik_rooms_open Rooms (the engine's lobbies: games other devices may join) open on an appliance, as last read.\n# TYPE dejarik_rooms_open gauge\n")
+	for _, v := range views {
+		if _, isWolf := s.wolf[v.Name]; isWolf {
+			fmt.Fprintf(&b, "dejarik_rooms_open{project=%q} %d\n", v.Name, len(s.rooms[v.Name]))
+		}
+	}
+	b.WriteString("# HELP dejarik_rooms_opened_total Rooms opened from the Foyer.\n# TYPE dejarik_rooms_opened_total counter\n")
+	for _, v := range views {
+		if _, isWolf := s.wolf[v.Name]; isWolf {
+			fmt.Fprintf(&b, "dejarik_rooms_opened_total{project=%q} %d\n", v.Name, s.opened[v.Name])
+		}
+	}
+	b.WriteString("# HELP dejarik_room_joins_total Sessions switched into a room from the Foyer (the opener's own join included).\n# TYPE dejarik_room_joins_total counter\n")
+	for _, v := range views {
+		if _, isWolf := s.wolf[v.Name]; isWolf {
+			fmt.Fprintf(&b, "dejarik_room_joins_total{project=%q} %d\n", v.Name, s.joins[v.Name])
+		}
+	}
+	b.WriteString("# HELP dejarik_room_refusals_total Opens and joins the Foyer refused, in words (a tile already open on that home, a full room, a wrong PIN).\n# TYPE dejarik_room_refusals_total counter\n")
+	for _, v := range views {
+		if _, isWolf := s.wolf[v.Name]; isWolf {
+			fmt.Fprintf(&b, "dejarik_room_refusals_total{project=%q} %d\n", v.Name, s.roomNo[v.Name])
+		}
+	}
+	b.WriteString("# HELP dejarik_room_stops_total Rooms closed on purpose, from the Foyer or the panel.\n# TYPE dejarik_room_stops_total counter\n")
+	for _, v := range views {
+		if _, isWolf := s.wolf[v.Name]; isWolf {
+			fmt.Fprintf(&b, "dejarik_room_stops_total{project=%q} %d\n", v.Name, s.roomStops[v.Name])
 		}
 	}
 	fmt.Fprintf(&b, "# HELP dejarik_pairings_total Devices paired through the panel.\n# TYPE dejarik_pairings_total counter\ndejarik_pairings_total %d\n", s.pairs)

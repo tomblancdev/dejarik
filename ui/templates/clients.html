@@ -110,6 +110,35 @@
     {{else}}
     <div class="note">Nobody is in a seat.</div>
     {{end}}
+
+    <div class="seam"></div>
+    <div class="between">
+      <div class="eng t11">rooms</div>
+      <div class="eng t9" style="opacity:.7">{{len .Rooms}} open</div>
+    </div>
+    {{if .Rooms}}
+    <div class="devs">
+      {{range .Rooms}}
+      <div class="dev">
+        {{if or $.Admin .Mine}}
+        <form method="post" action="/room-stop/{{$.Project}}" style="display:flex;flex-direction:column;align-items:center;gap:6px" autocomplete="off"
+              hx-post="/room-stop/{{$.Project}}" hx-target="#project-{{$.Project}}" hx-swap="outerHTML"
+              hx-confirm="Close this room? Everybody in it is put back where they were; whatever is unsaved in the game is lost.">
+          <input type="hidden" name="room" value="{{.ID}}">
+          <button class="tog" type="submit" title="close this room" aria-label="close this room"><b></b></button>
+          {{if .Locked}}<input class="win pin" name="pin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="PIN" aria-label="the room's PIN" style="width:96px;height:40px;font-size:18px">{{end}}
+        </form>
+        {{else}}<span class="tog" aria-hidden="true"><b></b></span>{{end}}
+        <div class="lamp amber{{if not .Mine}} off{{end}}"><i></i></div>
+        <div class="eng t9">{{.App}}</div>
+        <div class="eng t9" style="opacity:.6">opened by {{.Label}}{{if .Shared}} · shared{{end}} · {{.In}} in{{if .Locked}} · locked{{end}} · since {{.Since.Format "15:04"}}</div>
+      </div>
+      {{end}}
+    </div>
+    <div class="note">A room is a game other devices may join, opened from Le Foyer (the hub tile). It stays open when everybody has left; a room nobody is in lets the appliance sleep, and dies with it.</div>
+    {{else}}
+    <div class="note">No room open. A room is opened from Le Foyer, the hub tile in Moonlight.</div>
+    {{end}}
     {{end}}
   </div>
 </section>

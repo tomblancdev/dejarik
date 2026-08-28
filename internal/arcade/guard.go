@@ -54,12 +54,14 @@ type clash struct {
 
 // duplicates finds every clash. Seats that belong to nobody's drawer (a
 // device not yet pointed at a person) are left alone: their homes are
-// distinct, there is nothing to protect.
+// distinct, there is nothing to protect. So are seats on the hub tile: the
+// Foyer page holds no save, and a person's phone and TV both sitting in it
+// is the normal way into a room, not a clash.
 func duplicates(seats []Seat) []clash {
 	byKey := map[string][]Seat{}
 	var order []string
 	for _, s := range seats {
-		if s.Person == "" {
+		if s.Person == "" || s.Hub {
 			continue
 		}
 		k := s.Person + "\x00" + s.AppID

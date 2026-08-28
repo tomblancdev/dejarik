@@ -195,6 +195,11 @@ type fakeWolf struct {
 	points   []map[string]any
 	stops    []string
 	next     int
+	// the rooms: what create was asked, what the engine lists, the joins
+	created []map[string]any
+	lobbies []map[string]any
+	joined  []map[string]any
+	stopped []map[string]any
 }
 
 func (f *fakeWolf) handler() http.Handler {
@@ -282,14 +287,95 @@ func (f *fakeWolf) handler() http.Handler {
 		ok(w, map[string]any{"success": true})
 	})
 	mux.HandleFunc("GET /api/v1/apps", func(w http.ResponseWriter, _ *http.Request) {
-		ok(w, map[string]any{"success": true, "apps": []map[string]string{{"id": "178625061", "title": "Steam"}, {"id": "261696729", "title": "RetroDECK"}}})
+		runner := func(name string) map[string]any {
+			return map[string]any{"type": "docker", "name": name, "image": "ghcr.io/example/" + name + ":1", "mounts": []string{}, "env": []string{"RUN_SWAY=true"}, "devices": []string{}, "ports": []string{}, "base_create_json": "{}"}
+		}
+		ok(w, map[string]any{"success": true, "apps": []map[string]any{
+			{"id": "178625061", "title": "Steam", "render_node": "/dev/dri/renderD128", "runner": runner("steam")},
+			{"id": "261696729", "title": "RetroDECK", "render_node": "/dev/dri/renderD128", "icon_png_path": "https://example.com/retrodeck.png", "runner": runner("borne")},
+			{"id": "900000001", "title": "Le Foyer", "render_node": "/dev/dri/renderD128", "runner": runner("foyer")},
+		}})
+	})
+	// the rooms
+	mux.HandleFunc("GET /api/v1/lobbies", func(w http.ResponseWriter, _ *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		ok(w, map[string]any{"success": true, "lobbies": f.lobbies})
+	})
+	mux.HandleFunc("POST /api/v1/lobbies/create", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.created = append(f.created, body)
+		id := fmt.Sprintf("lobby-%d", len(f.created))
+		pin := body["pin"] != nil
+		f.lobbies = append(f.lobbies, map[string]any{"id": id, "name": body["name"], "icon_png_path": body["icon_png_path"], "multi_user": body["multi_user"],
+			"started_by_profile_id": body["profile_id"], "pin_required": pin, "pin": body["pin"], "stop_when_everyone_leaves": body["stop_when_everyone_leaves"],
+			"runner": body["runner"], "connected_sessions": []string{}})
+		ok(w, map[string]any{"success": true, "lobby_id": id})
+	})
+	pinOK := func(l map[string]any, given any) bool {
+		if l["pin"] == nil {
+			return true
+		}
+		return fmt.Sprint(l["pin"]) == fmt.Sprint(given)
+	}
+	mux.HandleFunc("POST /api/v1/lobbies/join", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.joined = append(f.joined, body)
+		for _, l := range f.lobbies {
+			if l["id"] != body["lobby_id"] {
+				continue
+			}
+			if !pinOK(l, body["pin"]) {
+				w.WriteHeader(500)
+				ok(w, map[string]any{"success": false, "error": "Invalid pin"})
+				return
+			}
+			in := l["connected_sessions"].([]string)
+			if l["multi_user"] == false && len(in) >= 1 {
+				w.WriteHeader(500)
+				ok(w, map[string]any{"success": false, "error": "Lobby is full"})
+				return
+			}
+			l["connected_sessions"] = append(in, fmt.Sprint(body["moonlight_session_id"]))
+			ok(w, map[string]any{"success": true})
+			return
+		}
+		w.WriteHeader(500)
+		ok(w, map[string]any{"success": false, "error": "Lobby or session not found"})
+	})
+	mux.HandleFunc("POST /api/v1/lobbies/stop", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.stopped = append(f.stopped, body)
+		kept := f.lobbies[:0]
+		for _, l := range f.lobbies {
+			if l["id"] == body["lobby_id"] {
+				if !pinOK(l, body["pin"]) {
+					w.WriteHeader(500)
+					ok(w, map[string]any{"success": false, "error": "Invalid pin"})
+					return
+				}
+				continue
+			}
+			kept = append(kept, l)
+		}
+		f.lobbies = kept
+		ok(w, map[string]any{"success": true})
 	})
 	return mux
 }
 
 func session(id, app, ip string, uid int) map[string]any {
-	return map[string]any{"client_id": id, "app_id": app, "client_ip": ip, "video_width": 1920, "video_height": 1080, "video_refresh_rate": 60,
-		"client_settings": map[string]any{"run_uid": uid, "run_gid": 3000}}
+	return map[string]any{"client_id": id, "app_id": app, "client_ip": ip, "video_width": 1920, "video_height": 1080, "video_refresh_rate": 60, "audio_channel_count": 2,
+		"client_settings": map[string]any{"run_uid": uid, "run_gid": 3000, "controllers_override": []string{}, "mouse_acceleration": 1.0, "v_scroll_acceleration": 1.0, "h_scroll_acceleration": 1.0, "motion_controller_override": "AUTO"}}
 }
 
 // wolfServer wires a panel to a fake engine, with one person (someone,
@@ -324,6 +410,9 @@ projects:
     connect:
       host: "203.0.113.23"
       tcp: [47984, 47989, 48010]
+    foyer:
+      title: "Le Foyer"
+      sources: ["203.0.113.23"]
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -50,6 +50,17 @@ projects:
       host: "appliance.example.com"
       tcp: [47984, 47989, 48010]
       udp: [48100, 48200, 47999]
+    # the hub tile (Le Foyer): a seat that is a kiosk browser on this
+    # program's /foyer/<project> page, where a person opens a ROOM (the
+    # engine's lobby — a game other devices may join) or joins one. `title`
+    # is the tile's name in the engine (exempt from the one-drawer-one-seat
+    # guard; never a room). `sources` are the addresses the page may be
+    # read FROM — the appliance, whose seats sit behind it: with the session
+    # id the engine handed the seat, the whole of the page's authentication.
+    foyer:
+      title: "Le Foyer"
+      sources: ["203.0.113.23"]
+      render_node: /dev/dri/renderD128
 
   # A CONSOLE: one machine, one desktop, Sunshine; pairing relayed to its web
   # UI with the one account it has.

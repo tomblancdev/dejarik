@@ -198,19 +198,22 @@ type Session struct {
 	Width  int
 	Height int
 	FPS    int
+	// AudioChannels is what the client asked for (2 = stereo).
+	AudioChannels int
+	// Settings is the client's settings as the engine prints them, kept
+	// whole: a room opened from this session is handed them verbatim.
+	Settings json.RawMessage
 }
 
 type rawSession struct {
-	ID       string `json:"client_id"` // the engine prints the SESSION id under this name
-	AppID    string `json:"app_id"`
-	IP       string `json:"client_ip"`
-	Width    int    `json:"video_width"`
-	Height   int    `json:"video_height"`
-	FPS      int    `json:"video_refresh_rate"`
-	Settings *struct {
-		UID int `json:"run_uid"`
-		GID int `json:"run_gid"`
-	} `json:"client_settings"`
+	ID       string          `json:"client_id"` // the engine prints the SESSION id under this name
+	AppID    string          `json:"app_id"`
+	IP       string          `json:"client_ip"`
+	Width    int             `json:"video_width"`
+	Height   int             `json:"video_height"`
+	FPS      int             `json:"video_refresh_rate"`
+	Audio    int             `json:"audio_channel_count"`
+	Settings json.RawMessage `json:"client_settings"`
 }
 
 // Sessions lists the open seats.
@@ -223,9 +226,15 @@ func (c *Client) Sessions(ctx context.Context) ([]Session, error) {
 	}
 	ss := make([]Session, 0, len(out.Sessions))
 	for _, r := range out.Sessions {
-		s := Session{ID: r.ID, AppID: r.AppID, IP: r.IP, Width: r.Width, Height: r.Height, FPS: r.FPS}
-		if r.Settings != nil {
-			s.UID, s.GID = r.Settings.UID, r.Settings.GID
+		s := Session{ID: r.ID, AppID: r.AppID, IP: r.IP, Width: r.Width, Height: r.Height, FPS: r.FPS, AudioChannels: r.Audio}
+		if len(r.Settings) > 0 && string(r.Settings) != "null" {
+			var st struct {
+				UID int `json:"run_uid"`
+				GID int `json:"run_gid"`
+			}
+			if json.Unmarshal(r.Settings, &st) == nil {
+				s.UID, s.GID, s.Settings = st.UID, st.GID, r.Settings
+			}
 		}
 		ss = append(ss, s)
 	}
@@ -237,10 +246,15 @@ func (c *Client) Stop(ctx context.Context, sessionID string) error {
 	return c.call(ctx, http.MethodPost, "/api/v1/sessions/stop", map[string]string{"session_id": sessionID}, nil)
 }
 
-// App is one tile, as the engine names it.
+// App is one tile, as the engine names it — and enough of it to open a
+// ROOM on it: the runner (kept whole, handed back to the engine verbatim),
+// the render node and the icon.
 type App struct {
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	ID         string          `json:"id"`
+	Title      string          `json:"title"`
+	Icon       string          `json:"icon_png_path"`
+	RenderNode string          `json:"render_node"`
+	Runner     json.RawMessage `json:"runner"`
 }
 
 // Apps lists the tiles, so a seat can be named by its app rather than a number.
@@ -252,4 +266,108 @@ func (c *Client) Apps(ctx context.Context) ([]App, error) {
 		return nil, err
 	}
 	return out.Apps, nil
+}
+
+// --- rooms: the engine's lobbies -------------------------------------------
+//
+// A tile session is PRIVATE: the engine renders it for one client and no
+// other client can be put into it. A LOBBY is the joinable kind: a game the
+// engine starts on its own compositor, that any number of sessions can be
+// switched into (their pads, mouse and stream follow them in and out). It
+// is what Wolf's own UI uses for co-op, and the JSON below is what that UI
+// sends (App.cs at 7f416ec), which is the only spec there is.
+
+// Lobby is one room as the engine lists it.
+type Lobby struct {
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Icon          *string         `json:"icon_png_path"`
+	MultiUser     bool            `json:"multi_user"`
+	StartedBy     string          `json:"started_by_profile_id"`
+	PinRequired   bool            `json:"pin_required"`
+	StopWhenEmpty bool            `json:"stop_when_everyone_leaves"`
+	Sessions      []string        `json:"connected_sessions"`
+	Runner        json.RawMessage `json:"runner"`
+}
+
+// Lobbies lists the rooms open right now.
+func (c *Client) Lobbies(ctx context.Context) ([]Lobby, error) {
+	var out struct {
+		Lobbies []Lobby `json:"lobbies"`
+	}
+	if err := c.call(ctx, http.MethodGet, "/api/v1/lobbies", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Lobbies, nil
+}
+
+// VideoSettings is what a room's compositor is made for: the opener's mode,
+// the node it renders on, and the buffer caps — the one value the engine
+// computes only at its own start and never prints, so it is read from the
+// seat that opens the room (its WOLF_VIDEO_BUFFER_CAPS).
+type VideoSettings struct {
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	Refresh    int    `json:"refresh_rate"`
+	WaylandGPU string `json:"wayland_render_node"`
+	RunnerGPU  string `json:"runner_render_node"`
+	Caps       string `json:"video_producer_buffer_caps"`
+}
+
+// LobbyRequest is a room to open. Pin nil = open to everyone; StateFolder
+// is the home the game runs on (`<drawer>/<app>` — the same one its tile
+// uses, so the saves are the person's); Runner and Settings are handed
+// through untouched.
+type LobbyRequest struct {
+	ProfileID     string          `json:"profile_id"`
+	Name          string          `json:"name"`
+	Icon          *string         `json:"icon_png_path"`
+	MultiUser     bool            `json:"multi_user"`
+	Pin           []int           `json:"pin"`
+	StopWhenEmpty bool            `json:"stop_when_everyone_leaves"`
+	Video         VideoSettings   `json:"video_settings"`
+	Audio         AudioSettings   `json:"audio_settings"`
+	Settings      json.RawMessage `json:"client_settings"`
+	StateFolder   string          `json:"runner_state_folder"`
+	Runner        json.RawMessage `json:"runner"`
+}
+
+// AudioSettings is the room's channel count.
+type AudioSettings struct {
+	ChannelCount int `json:"channel_count"`
+}
+
+// CreateLobby opens a room and returns its id. The engine answers once the
+// room's compositor is up (it waits up to 20 s for that itself).
+func (c *Client) CreateLobby(ctx context.Context, r LobbyRequest) (string, error) {
+	if len(r.Settings) == 0 {
+		r.Settings = json.RawMessage("null")
+	}
+	var out struct {
+		ID string `json:"lobby_id"`
+	}
+	if err := c.call(ctx, http.MethodPost, "/api/v1/lobbies/create", r, &out); err != nil {
+		return "", err
+	}
+	return out.ID, nil
+}
+
+// JoinLobby switches a session into a room: its stream, its pads, its mouse
+// and keyboard follow. The engine refuses a full room and a wrong PIN.
+func (c *Client) JoinLobby(ctx context.Context, lobbyID, sessionID string, pin []int) error {
+	body := map[string]any{"lobby_id": lobbyID, "moonlight_session_id": sessionID}
+	if pin != nil {
+		body["pin"] = pin
+	}
+	return c.call(ctx, http.MethodPost, "/api/v1/lobbies/join", body, nil)
+}
+
+// StopLobby closes a room: everybody in it is switched back to their own
+// session, and the game is ended. A locked room needs its PIN.
+func (c *Client) StopLobby(ctx context.Context, lobbyID string, pin []int) error {
+	body := map[string]any{"lobby_id": lobbyID}
+	if pin != nil {
+		body["pin"] = pin
+	}
+	return c.call(ctx, http.MethodPost, "/api/v1/lobbies/stop", body, nil)
 }

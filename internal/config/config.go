@@ -72,11 +72,32 @@ type Project struct {
 	// account behind it and only an admin may point a device at.
 	People  map[string]Person `yaml:"people"`
 	Connect Connect           `yaml:"connect"`
+	// Foyer is the in-stream hub of a Wolf project (Le Foyer): a tile whose
+	// seat is a kiosk browser on this program's /foyer page, where a person
+	// opens a ROOM (the engine's lobby: a game other devices may walk into)
+	// or joins one. Empty title = no hub.
+	Foyer Foyer `yaml:"foyer"`
 	// WaitMinutes is the target's min_uptime, copied here for one purpose:
 	// telling a person how long the machine will wait for them. Le Veilleur
 	// owns the number; this is the honest way to say it out loud.
 	WaitMinutes int `yaml:"wait_minutes"`
 }
+
+// Foyer is the hub tile of an appliance. Title is the tile's name in the
+// engine (the seat that is the page itself: exempt from the one-drawer-
+// one-seat guard, never a room). Sources are the addresses the page may
+// be read FROM — the appliance, whose seats sit behind it — and, with the
+// session id the engine handed the seat, the whole of the page's
+// authentication: there is no login in the stream. RenderNode is what a
+// room's compositor renders on when the app names none.
+type Foyer struct {
+	Title      string   `yaml:"title"`
+	Sources    []string `yaml:"sources"`
+	RenderNode string   `yaml:"render_node"`
+}
+
+// HasFoyer reports whether the project carries a hub.
+func (p Project) HasFoyer() bool { return strings.TrimSpace(p.Foyer.Title) != "" }
 
 // Engine names which of the two a project runs on.
 func (p Project) Engine() string {
@@ -221,6 +242,14 @@ func Load(path string) (*Config, error) {
 		if p.Engine() == "wolf" {
 			if p.Wolf.APIURL == "" {
 				return nil, fmt.Errorf("project %q: a wolf project needs api_url — pairing and the seats live there", n)
+			}
+			if p.HasFoyer() {
+				if len(p.Foyer.Sources) == 0 {
+					return nil, fmt.Errorf("project %q: the foyer names no sources — a hub page nobody may read is a blank page", n)
+				}
+				if p.Foyer.RenderNode == "" {
+					p.Foyer.RenderNode = "/dev/dri/renderD128"
+				}
 			}
 			seen := map[int]string{}
 			for name, d := range p.People {

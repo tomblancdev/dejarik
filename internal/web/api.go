@@ -23,6 +23,10 @@ func fail(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
 }
 
+func decodeJSON(r *http.Request, v any) error {
+	return json.NewDecoder(r.Body).Decode(v)
+}
+
 func (s *Server) apiMe(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.who(w, r)
 	if !ok {

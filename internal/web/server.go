@@ -59,6 +59,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{name}/clients/{uuid}/point", s.apiPoint)
 	mux.HandleFunc("GET /api/projects/{name}/seats", s.apiSeats)
 	mux.HandleFunc("POST /api/projects/{name}/seats/{id}/stop", s.apiStop)
+	mux.HandleFunc("GET /api/projects/{name}/rooms", s.apiRooms)
+	mux.HandleFunc("POST /api/projects/{name}/rooms/{id}/stop", s.apiRoomStop)
 
 	// the panel
 	mux.HandleFunc("GET /{$}", s.home)
@@ -68,6 +70,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /unpair/{name}", s.unpair)
 	mux.HandleFunc("POST /point/{name}", s.point)
 	mux.HandleFunc("POST /stop/{name}", s.stop)
+	mux.HandleFunc("POST /room-stop/{name}", s.roomStop)
+
+	// Le Foyer: the page in the stream (foyer.go) — its own identity, no
+	// proxy in front
+	mux.HandleFunc("GET /foyer/{name}", s.foyerPage)
+	mux.HandleFunc("GET /foyer/{name}/panel", s.foyerPanel)
+	mux.HandleFunc("POST /foyer/{name}/open", s.foyerOpen)
+	mux.HandleFunc("POST /foyer/{name}/join", s.foyerJoin)
+	mux.HandleFunc("POST /foyer/{name}/stop", s.foyerStop)
 	return mux
 }
 
@@ -270,6 +281,9 @@ func (s *Server) clientsData(ctx context.Context, v arcade.View, id auth.Identit
 			seats, no, err := s.svc.Seats(ctx, v.Name, id)
 			if err == nil {
 				c.Seats, c.Refusal = seats, no
+			}
+			if rooms, err := s.svc.Rooms(ctx, v.Name, id); err == nil {
+				c.Rooms = rooms
 			}
 		}
 	}

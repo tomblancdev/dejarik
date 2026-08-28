@@ -66,6 +66,44 @@ it stops neither and says so.
 the panel shows ON or OFF from the engine alone, offers no button, and says
 who to ask.
 
+## Le Foyer — rooms, in the stream
+
+A tile is **private**: the engine renders it for one device, and no other
+device can be put into it, however the two are paired. So two devices could
+never share a game — until the engine's **lobby**, a game other sessions may
+be switched into. Dejarik drives it as a **room**, from a page *inside the
+stream*: **Le Foyer**, the hub tile.
+
+The tile is a seat that runs nothing but a kiosk browser on
+`/foyer/<project>`. **Identity there is the pairing, again:** the engine
+hands that seat its own session id; the page reads the session back from
+the engine and joins it to its drawer by the uid it runs as — the guard's
+own join — and trusts nothing else. Two locks and no login: the page answers
+only from the appliance's addresses (`foyer.sources`; the seats sit behind
+it) and only for a session the engine has open right now. A made-up id
+maps to nothing; the vhost never reaches it (wrong source).
+
+On the page: **rooms open in the house** (JOIN — and STOP for the one who
+opened it) and **the house** (every tile but the hub: OPEN A ROOM, or LOCK
+WITH A PIN first — four wheels a pad turns; the engine asks the PIN of
+whoever joins or closes it). A room runs on the opener's home for that game
+— the same the tile uses, so the saves are theirs — with the opener's
+picture, and **stays open when everybody has left**: a stream that drops
+comes back to a game still running; STOP is for when it should be gone; a
+room nobody is in lets the appliance sleep, and dies with it. The engine's
+own combo **START + UP + RB** brings a pad back to the page.
+
+Two rules keep the homes honest. A room is refused on a home a **tile** has
+open (*"RetroDECK is already open for salon on the TV as a tile — quit it
+there"*): two boxes on one save folder is what the guard exists to prevent.
+And seats on the hub tile are **exempt from the guard**: the page holds no
+save, and a person's phone and TV both sitting in the Foyer is the normal
+way into a room, not a clash.
+
+A pad drives the page (the Gamepad API: D-pad or stick to move the ring,
+A presses, B backs out of a PIN); so do arrow keys, a mouse and a finger.
+Rooms also show on the panel, where an admin may close any.
+
 ## Two truths, never collapsed
 
 The whole design is one idea. Dejarik reads **two** sources and never lets
