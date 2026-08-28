@@ -193,3 +193,18 @@ func contains(h, n string) bool {
 	}
 	return false
 }
+
+// A project the watchman does not know has one truth and no button.
+func TestHandStartedHasOneTruth(t *testing.T) {
+	p := config.Project{Label: "the appliance", Wolf: config.Wolf{ProbeURL: "http://203.0.113.23:47989/serverinfo", APIURL: "http://203.0.113.23:47900"}}
+	v := resolve("wolf", inputs{project: p, board: board(up(), down()), answering: true})
+	check(t, v, Ready)
+	if !v.HandStarted || v.Engine != "wolf" || v.Actionable() || len(v.Chain) != 0 {
+		t.Fatalf("view = %+v", v)
+	}
+	v = resolve("wolf", inputs{project: p, board: nil, boardErr: errors.New("down"), answering: false})
+	check(t, v, Asleep)
+	if v.Watchman.Known {
+		t.Fatal("a hand-started project is nobody's on the board")
+	}
+}

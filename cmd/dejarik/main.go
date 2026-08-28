@@ -1,7 +1,8 @@
 // Dejarik — the arcade's panel: what can I play, wake it, and my devices.
 //
 // It owns no machinery. Power belongs to Le Veilleur, the firewall to Le
-// Videur, identity to the gateway, pairing to Sunshine, saves to the tank.
+// Videur, identity to the gateway, pairing to the engine (Sunshine on a
+// console, Wolf on an appliance), saves to the tank.
 // This is the face: it knows who is asking, turns that into requests to
 // whoever owns the thing, and turns their state back into words.
 package main

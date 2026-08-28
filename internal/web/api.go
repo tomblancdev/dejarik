@@ -98,21 +98,87 @@ func (s *Server) apiPair(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		PIN    string `json:"pin"`
 		Device string `json:"device"`
+		For    string `json:"for"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 	}
 	if body.PIN == "" {
-		body.PIN, body.Device = r.FormValue("pin"), r.FormValue("device")
+		body.PIN, body.Device, body.For = r.FormValue("pin"), r.FormValue("device"), r.FormValue("for")
 	}
-	err := s.svc.Pair(r.Context(), r.PathValue("name"), body.PIN, body.Device, id)
+	err := s.svc.Pair(r.Context(), r.PathValue("name"), body.PIN, body.Device, body.For, id)
 	switch {
 	case errors.Is(err, arcade.ErrNoProject):
 		fail(w, http.StatusNotFound, "no such project")
 	case err != nil:
 		fail(w, http.StatusBadRequest, err.Error())
 	default:
-		writeJSON(w, http.StatusCreated, map[string]string{"device": body.Device, "by": id.User})
+		writeJSON(w, http.StatusCreated, map[string]string{"device": body.Device, "by": id.User, "for": body.For})
+	}
+}
+
+// apiPoint sends a paired device to a drawer (an appliance; admins).
+func (s *Server) apiPoint(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.who(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		For string `json:"for"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	if body.For == "" {
+		body.For = r.FormValue("for")
+	}
+	err := s.svc.Point(r.Context(), r.PathValue("name"), r.PathValue("uuid"), body.For, id)
+	switch {
+	case errors.Is(err, arcade.ErrNoProject):
+		fail(w, http.StatusNotFound, "no such project")
+	case err != nil:
+		fail(w, http.StatusForbidden, err.Error())
+	default:
+		writeJSON(w, http.StatusOK, map[string]string{"uuid": r.PathValue("uuid"), "for": body.For, "by": id.User})
+	}
+}
+
+// apiSeats lists the open seats of an appliance: yours and the shared ones;
+// all of them for an admin. The last refusal rides along, in words.
+func (s *Server) apiSeats(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.who(w, r)
+	if !ok {
+		return
+	}
+	seats, no, err := s.svc.Seats(r.Context(), r.PathValue("name"), id)
+	switch {
+	case errors.Is(err, arcade.ErrNoProject):
+		fail(w, http.StatusNotFound, "no such project")
+	case err != nil:
+		fail(w, http.StatusBadGateway, err.Error())
+	default:
+		out := map[string]any{"seats": seats}
+		if no.Words != "" {
+			out["refusal"] = no
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
+}
+
+// apiStop closes one seat: yours, or any for an admin.
+func (s *Server) apiStop(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.who(w, r)
+	if !ok {
+		return
+	}
+	err := s.svc.Stop(r.Context(), r.PathValue("name"), r.PathValue("id"), id)
+	switch {
+	case errors.Is(err, arcade.ErrNoProject):
+		fail(w, http.StatusNotFound, "no such project")
+	case err != nil:
+		fail(w, http.StatusForbidden, err.Error())
+	default:
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

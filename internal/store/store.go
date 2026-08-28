@@ -22,12 +22,16 @@ import (
 	"time"
 )
 
-// Owner is who put a device on a console.
+// Owner is who put a device on a project — and, on an appliance, which
+// drawer they pointed it at (For). The drawer itself is the ENGINE's fact
+// (the client's folder); this only keeps the name a person gave the device
+// and who did the pairing, which the engine never knew.
 type Owner struct {
 	UUID    string    `json:"uuid"`
 	Project string    `json:"project"`
 	Device  string    `json:"device"`
 	By      string    `json:"by"`
+	For     string    `json:"for,omitempty"`
 	At      time.Time `json:"at"`
 }
 

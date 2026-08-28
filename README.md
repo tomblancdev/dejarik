@@ -3,7 +3,8 @@
 # Dejarik
 
 **The arcade's panel.** A person opens one page and gets three things: can I
-play, wake it if not, and which of my devices are paired. It looks like a
+play, wake it if not, and which of my devices are paired — and, on an
+appliance with a seat per person, *who is in which seat*. It looks like a
 starship control panel because that is what it is — instruments behind glass,
 and one lit button that actually does something.
 
@@ -17,15 +18,53 @@ something else, and it says so:
 | What | Who actually owns it |
 |---|---|
 | power — waking the tower and the console | [Le Veilleur](https://github.com/tomblancdev/veilleur) |
-| pairing, streaming | Sunshine, on the console |
+| pairing, streaming | the engine: Sunshine on a console, [Wolf](https://github.com/games-on-whales/wolf) on an appliance |
 | who you are | the gateway (Authelia), through the reverse proxy |
 | saves, the catalogue | the lab's storage |
 | temporary firewall openings | [Le Videur](https://github.com/tomblancdev/videur) |
 
-The one fact it keeps for itself: **who paired which device**. Sunshine's
-pairing list is global — it knows a device called `tom-phone` exists, not
-whose it is. That file is declared *replaceable*: lose it and nobody loses a
-pairing, the devices just stop having an owner.
+The one fact it keeps for itself: **who paired which device**, and the name
+they gave it. Sunshine's pairing list is global — it knows a device called
+`tom-phone` exists, not whose it is. That file is declared *replaceable*:
+lose it and nobody loses a pairing, the devices just stop having an owner.
+
+## Two engines, one page
+
+A project runs on one of two engines, and the page is the same for both.
+
+**A console** (Sunshine): one machine, one desktop. Pairing relays the PIN
+to Sunshine's web UI with the one account it has; Dejarik remembers whose
+the device is.
+
+**An appliance** (Wolf): a seat per person, each in its own **drawer** — a
+folder on the appliance, a uid its seats run as. Here **identity is the
+pairing**: when a person types the PIN, Dejarik answers the engine's
+pending request and then *points* the new device at their drawer, so from
+its next connection it opens *their* home — their account, their library,
+their saves — on every device pointed at them. The engine gives a fresh
+pairing a folder of its own and the default uid, and a device that pairs
+again lands there again, so pointing is not optional; it is the whole of
+identity. Drawers are data the operator hands the panel (`people:` in the
+config): one per account, plus **shared** drawers for the living-room
+devices everybody uses — the TV pointed at `salon` plays as the house, and
+only an admin may point a device there.
+
+**One drawer, one open seat.** Every device a person paired opens the same
+drawer — that is the point — and the engine will happily start a second seat
+on that home while the first is in: two Steam clients on one config folder,
+two emulators autosaving to one file. Nothing upstream prevents it and the
+panel cannot intercept a launch (Moonlight talks to the engine directly). So
+the panel *watches*: it reads the open seats every two seconds, joins each to
+its drawer by the uid it runs as, and when two are open on the same drawer
+in the same app it closes the **newer** one — the game somebody is playing
+is never touched — and says why, on the page and in the log: *"Steam is
+already open for tom on 203.0.113.10 since 20:14 — quit it there first."*
+Two seats it saw at the same instant (it just started) cannot be told apart:
+it stops neither and says so.
+
+**Hand-started.** A project the watchman does not know names no `target`:
+the panel shows ON or OFF from the engine alone, offers no button, and says
+who to ask.
 
 ## Two truths, never collapsed
 
@@ -83,8 +122,12 @@ GET    /api/projects                    every project and its state
 GET    /api/projects/{name}             one project — both truths
 POST   /api/projects/{name}/play        idempotent; returns without waiting
 GET    /api/projects/{name}/clients     paired devices (yours; all, for admins)
-POST   /api/projects/{name}/clients     pair — relays the PIN Moonlight showed
+POST   /api/projects/{name}/clients     pair — relays the PIN Moonlight showed; on an
+                                        appliance, then points the device at a drawer
 DELETE /api/projects/{name}/clients/{uuid}
+POST   /api/projects/{name}/clients/{uuid}/point   an admin sends a device to a drawer
+GET    /api/projects/{name}/seats       open seats (yours + shared; all, for admins)
+POST   /api/projects/{name}/seats/{id}/stop        close a seat (yours; any, for admins)
 GET    /api/me · /healthz · /metrics · /openapi.json
 ```
 

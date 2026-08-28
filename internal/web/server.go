@@ -55,6 +55,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{name}/clients", s.apiClients)
 	mux.HandleFunc("POST /api/projects/{name}/clients", s.apiPair)
 	mux.HandleFunc("DELETE /api/projects/{name}/clients/{uuid}", s.apiUnpair)
+	// an appliance: drawers and seats
+	mux.HandleFunc("POST /api/projects/{name}/clients/{uuid}/point", s.apiPoint)
+	mux.HandleFunc("GET /api/projects/{name}/seats", s.apiSeats)
+	mux.HandleFunc("POST /api/projects/{name}/seats/{id}/stop", s.apiStop)
 
 	// the panel
 	mux.HandleFunc("GET /{$}", s.home)
@@ -62,6 +66,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /play/{name}", s.play)
 	mux.HandleFunc("POST /pair/{name}", s.pair)
 	mux.HandleFunc("POST /unpair/{name}", s.unpair)
+	mux.HandleFunc("POST /point/{name}", s.point)
+	mux.HandleFunc("POST /stop/{name}", s.stop)
 	return mux
 }
 
@@ -154,10 +160,43 @@ func (s *Server) pair(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	var errMsg, notice string
-	if err := s.svc.Pair(r.Context(), name, r.FormValue("pin"), r.FormValue("device"), id); err != nil {
+	if err := s.svc.Pair(r.Context(), name, r.FormValue("pin"), r.FormValue("device"), r.FormValue("for"), id); err != nil {
 		errMsg = err.Error()
 	} else {
 		notice = "Paired. " + strings.TrimSpace(r.FormValue("device")) + " can stream now."
+		if f := strings.TrimSpace(r.FormValue("for")); f != "" {
+			notice = "Paired, and pointed at " + f + "'s drawer. " + strings.TrimSpace(r.FormValue("device")) + " can stream now."
+		}
+	}
+	s.afterClients(w, r, name, id, errMsg, notice)
+}
+
+func (s *Server) point(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.who(w, r)
+	if !ok {
+		return
+	}
+	name := r.PathValue("name")
+	var errMsg, notice string
+	if err := s.svc.Point(r.Context(), name, r.FormValue("uuid"), r.FormValue("for"), id); err != nil {
+		errMsg = err.Error()
+	} else {
+		notice = "Pointed at " + strings.TrimSpace(r.FormValue("for")) + "'s drawer. It opens there from its next connection."
+	}
+	s.afterClients(w, r, name, id, errMsg, notice)
+}
+
+func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.who(w, r)
+	if !ok {
+		return
+	}
+	name := r.PathValue("name")
+	var errMsg, notice string
+	if err := s.svc.Stop(r.Context(), name, r.FormValue("id"), id); err != nil {
+		errMsg = err.Error()
+	} else {
+		notice = "Seat closed."
 	}
 	s.afterClients(w, r, name, id, errMsg, notice)
 }
@@ -192,23 +231,42 @@ func (s *Server) afterClients(w http.ResponseWriter, r *http.Request, name strin
 
 func (s *Server) clientsData(ctx context.Context, v arcade.View, id auth.Identity, errMsg, notice string) clientsVM {
 	c := clientsVM{
-		Project: v.Name,
-		Label:   v.Label,
-		Admin:   id.IsAdmin(),
-		Ready:   v.CanPlay(),
-		Err:     errMsg,
-		Notice:  notice,
+		Project:     v.Name,
+		Label:       v.Label,
+		Engine:      v.Engine,
+		EngineWord:  "Sunshine",
+		HandStarted: v.HandStarted,
+		Admin:       id.IsAdmin(),
+		Ready:       v.CanPlay(),
+		Me:          id.User,
+		Err:         errMsg,
+		Notice:      notice,
 	}
-	// The device list needs Sunshine's admin API, which needs Sunshine to be
+	if v.Engine == "wolf" {
+		c.EngineWord = "the appliance"
+		p := s.cfg.Projects[v.Name]
+		_, c.HasDrawer = p.Drawer(id.User)
+		for _, n := range p.Drawers() {
+			d := p.People[n]
+			c.Drawers = append(c.Drawers, drawerVM{Name: n, Label: d.Label, Shared: d.Shared})
+		}
+	}
+	// The device list needs the engine's API, which needs the engine to be
 	// up. Asleep is not an error, so say nothing rather than shout.
 	if v.CanPlay() {
 		devs, err := s.svc.Devices(ctx, v.Name, id)
 		if err != nil {
 			if c.Err == "" {
-				c.Err = "Sunshine did not hand over the device list: " + err.Error()
+				c.Err = c.EngineWord + " did not hand over the device list: " + err.Error()
 			}
 		} else {
 			c.Devices = devs
+		}
+		if v.Engine == "wolf" {
+			seats, no, err := s.svc.Seats(ctx, v.Name, id)
+			if err == nil {
+				c.Seats, c.Refusal = seats, no
+			}
 		}
 	}
 	return c

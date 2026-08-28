@@ -55,8 +55,14 @@ type Link struct {
 
 // View is one project, as a person and an automation both see it.
 type View struct {
-	Name        string         `json:"name"`
-	Label       string         `json:"label"`
+	Name  string `json:"name"`
+	Label string `json:"label"`
+	// Engine is what answers Moonlight here: `sunshine` (a console) or
+	// `wolf` (an appliance with a seat per person).
+	Engine string `json:"engine"`
+	// HandStarted: the watchman does not know this project. It is on when
+	// somebody started it, and nothing on this page can change that.
+	HandStarted bool           `json:"hand_started"`
 	State       State          `json:"state"`
 	Reason      string         `json:"reason"`
 	Detail      string         `json:"detail,omitempty"`
@@ -83,7 +89,12 @@ type View struct {
 func (v View) CanPlay() bool { return v.State == Ready }
 
 // Actionable reports whether pressing the button would do anything.
-func (v View) Actionable() bool { return v.State == Asleep || v.State == Unknown || v.State == Ready }
+func (v View) Actionable() bool {
+	if v.HandStarted {
+		return false
+	}
+	return v.State == Asleep || v.State == Unknown || v.State == Ready
+}
 
 type inputs struct {
 	project   config.Project
@@ -100,15 +111,21 @@ func resolve(name string, in inputs) View {
 	v := View{
 		Name:        name,
 		Label:       or(p.Label, name),
+		Engine:      p.Engine(),
+		HandStarted: p.HandStarted(),
 		Connect:     p.Connect,
 		WaitMinutes: p.WaitMinutes,
+	}
+	engine, thing := "Sunshine", "The console"
+	if v.Engine == "wolf" {
+		engine, thing = "the engine", "The appliance"
 	}
 
 	v.Play = Truth{Known: true, OK: in.answering}
 	if in.answering {
-		v.Play.Says = "Sunshine is answering"
+		v.Play.Says = engine + " is answering"
 	} else {
-		v.Play.Says = "Sunshine is silent"
+		v.Play.Says = engine + " is silent"
 	}
 
 	var self veilleur.Target
@@ -117,6 +134,21 @@ func resolve(name string, in inputs) View {
 	if haveBoard {
 		v.Reachable = in.board.ObserveErr == ""
 	}
+
+	// A project the watchman does not know has one truth, and says so. No
+	// chain, no button: it is on when somebody started it.
+	if v.HandStarted {
+		v.Watchman = Truth{Known: false, Says: "started by hand — not the watchman's"}
+		if in.answering {
+			v.State = Ready
+			v.Reason = thing + " is on and " + engine + " is answering."
+			return v
+		}
+		v.State = Asleep
+		v.Reason = "Nothing is running. " + thing + " is started by hand for now — ask an admin."
+		return v
+	}
+
 	if haveBoard {
 		for _, t := range in.board.Chain(p.Target) {
 			v.Chain = append(v.Chain, Link{Name: t.Name, Label: t.Label, Up: t.Up, Known: t.Known, Busy: t.Pending})
@@ -145,7 +177,7 @@ func resolve(name string, in inputs) View {
 	//    an outage of the watchman must never stop somebody playing.
 	if in.answering {
 		v.State = Ready
-		v.Reason = "The console is warm and Sunshine is answering."
+		v.Reason = thing + " is warm and " + engine + " is answering."
 		if !v.Watchman.Known {
 			v.Detail = "The watchman is not answering, so nobody can say how long this stays up."
 		}
@@ -199,7 +231,7 @@ func resolve(name string, in inputs) View {
 	// 5. Up, but not answering yet: the gap this whole design exists for.
 	if self.Up {
 		v.State = Starting
-		v.Reason = "The console is up — Sunshine is still starting."
+		v.Reason = thing + " is up — " + engine + " is still starting."
 		v.Detail = "a minute at most; it is the last thing to come up"
 		return v
 	}

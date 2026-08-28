@@ -5,7 +5,7 @@
   <div class="stack">
 
     <div class="between">
-      <div class="eng t11">my clients{{if .Admin}} // admin view{{end}}</div>
+      <div class="eng t11">my devices{{if .Admin}} // admin view{{end}}</div>
       <div class="eng t9" style="opacity:.7">{{len .Devices}} paired</div>
     </div>
     <div class="seam"></div>
@@ -17,7 +17,7 @@
       <div class="stack">
         {{if .Devices}}
         <div class="devs">
-          {{range .Devices}}
+          {{range .Devices}}{{$dev := .}}
           <div class="dev">
             <form method="post" action="/unpair/{{$.Project}}"
                   hx-post="/unpair/{{$.Project}}" hx-target="#project-{{$.Project}}" hx-swap="outerHTML">
@@ -27,13 +27,27 @@
             </form>
             <div class="lamp green{{if not .Mine}} off{{end}}"><i></i></div>
             <div class="eng t9">{{.Name}}</div>
-            {{if $.Admin}}<div class="eng t9" style="opacity:.6">{{if .By}}{{.By}}{{else}}unclaimed{{end}}</div>{{end}}
+            {{if eq $.Engine "wolf"}}
+              <div class="eng t9" style="opacity:.6">{{if .Pointed}}{{.Label}}{{if .Shared}} · shared{{end}}{{else}}nobody's drawer{{end}}</div>
+              {{if $.Admin}}
+              <form method="post" action="/point/{{$.Project}}" style="display:flex;gap:6px;align-items:center"
+                    hx-post="/point/{{$.Project}}" hx-target="#project-{{$.Project}}" hx-swap="outerHTML">
+                <input type="hidden" name="uuid" value="{{.UUID}}">
+                <select class="field" name="for" aria-label="point {{.Name}} at a drawer">
+                  {{range $.Drawers}}<option value="{{.Name}}"{{if eq .Name $dev.For}} selected{{end}}>{{.Label}}{{if .Shared}} (shared){{end}}</option>{{end}}
+                </select>
+                <button class="pb small" type="submit"><span class="cap">point</span></button>
+              </form>
+              {{end}}
+            {{else}}
+              {{if $.Admin}}<div class="eng t9" style="opacity:.6">{{if .By}}{{.By}}{{else}}unclaimed{{end}}</div>{{end}}
+            {{end}}
           </div>
           {{end}}
         </div>
-        <div class="note">Flip a switch down to unpair that device at Sunshine.</div>
+        <div class="note">Flip a switch down to unpair that device at {{.EngineWord}}.{{if eq .Engine "wolf"}} A device opens the drawer it is pointed at — your own account, library and saves, on every device pointed at you.{{end}}</div>
         {{else}}
-        <div class="note">No devices paired yet. Add the console in Moonlight, then type the PIN it shows you.</div>
+        <div class="note">No devices paired yet. Add {{.Label}} in Moonlight, then type the PIN it shows you.</div>
         {{end}}
       </div>
 
@@ -46,14 +60,53 @@
           <input class="field" id="device-{{.Project}}" hx-preserve="true" name="device" maxlength="40" placeholder="name this device"
                  autocomplete="off" aria-label="name this device">
         </div>
+        {{if and (eq .Engine "wolf") .Admin}}
+        <select class="field" id="for-{{.Project}}" hx-preserve="true" name="for" aria-label="whose drawer this device opens">
+          {{range .Drawers}}<option value="{{.Name}}"{{if eq .Name $.Me}} selected{{end}}>{{.Label}}{{if .Shared}} (shared){{end}}</option>{{end}}
+        </select>
+        {{end}}
         <button class="pb small" type="submit" {{if not .Ready}}disabled{{end}}>
           <span class="cap">pair</span>
         </button>
         {{if not .Ready}}
-        <div class="note">Pairing needs the console awake — press play first.</div>
+        <div class="note">Pairing needs {{.Label}} on{{if .HandStarted}} — it is started by hand, ask an admin{{else}} — press play first{{end}}.</div>
+        {{end}}
+        {{if and (eq .Engine "wolf") (not .HasDrawer) (not .Admin)}}
+        <div class="note">You have no drawer on {{.Label}} yet — an admin adds one line for you.</div>
         {{end}}
       </form>
     </div>
+
+    {{if eq .Engine "wolf"}}
+    <div class="seam"></div>
+    <div class="between">
+      <div class="eng t11">open seats</div>
+      <div class="eng t9" style="opacity:.7">{{len .Seats}} open</div>
+    </div>
+    {{if .Refusal.Words}}<div class="err">{{.Refusal.At.Format "15:04"}} — {{.Refusal.Words}}</div>{{end}}
+    {{if .Seats}}
+    <div class="devs">
+      {{range .Seats}}
+      <div class="dev">
+        {{if or $.Admin .Mine}}
+        <form method="post" action="/stop/{{$.Project}}"
+              hx-post="/stop/{{$.Project}}" hx-target="#project-{{$.Project}}" hx-swap="outerHTML"
+              hx-confirm="Close this seat? Whatever is unsaved in it is lost.">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button class="tog" type="submit" title="close this seat" aria-label="close this seat"><b></b></button>
+        </form>
+        {{else}}<span class="tog" aria-hidden="true"><b></b></span>{{end}}
+        <div class="lamp green{{if not .Mine}} off{{end}}"><i></i></div>
+        <div class="eng t9">{{.App}}</div>
+        <div class="eng t9" style="opacity:.6">{{if .Person}}{{.Label}}{{if .Shared}} · shared{{end}}{{else}}nobody's drawer{{end}} · {{.Device}} · since {{.Since.Format "15:04"}}{{if .Mode}} · {{.Mode}}{{end}}</div>
+      </div>
+      {{end}}
+    </div>
+    <div class="note">One drawer, one open seat: a second seat opened on a drawer already in use is closed within seconds, and the reason shows here.</div>
+    {{else}}
+    <div class="note">Nobody is in a seat.</div>
+    {{end}}
+    {{end}}
   </div>
 </section>
 {{end}}

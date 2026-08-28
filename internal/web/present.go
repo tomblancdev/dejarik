@@ -38,20 +38,28 @@ type panelVM struct {
 func present(v arcade.View) panelVM {
 	p := panelVM{View: v}
 
-	switch v.State {
-	case arcade.Ready:
+	switch {
+	case v.HandStarted && v.State == arcade.Ready:
+		// nothing to press: it is on because somebody started it
+		p.StateWord, p.ScreenClass = "ON", "s-ready"
+		p.Button = buttonVM{Class: "lit", Label: "It is on", Sub: "connect with Moonlight", Disabled: true}
+		p.ShowConnect = true
+	case v.HandStarted:
+		p.StateWord, p.ScreenClass = "OFF", "s-asleep"
+		p.Button = buttonVM{Class: "", Label: "I want to play", Sub: "started by hand — ask an admin", Disabled: true}
+	case v.State == arcade.Ready:
 		p.StateWord, p.ScreenClass = "READY", "s-ready"
 		// Still live, and deliberately: /play is idempotent, so the button
 		// never has to grey out and never has to change what it means.
 		p.Button = buttonVM{Class: "lit", Label: "I want to play", Sub: "the console is warm"}
 		p.ShowConnect = true
-	case arcade.Starting:
+	case v.State == arcade.Starting:
 		p.StateWord, p.ScreenClass = "WAKING", "s-starting"
 		p.Button = buttonVM{Class: "busy", Label: "Waking…", Sub: "the chain is coming up", Disabled: true}
-	case arcade.Asleep:
+	case v.State == arcade.Asleep:
 		p.StateWord, p.ScreenClass = "ASLEEP", "s-asleep"
 		p.Button = buttonVM{Class: "lit", Label: "I want to play", Sub: "press to raise the chain"}
-	case arcade.Blocked:
+	case v.State == arcade.Blocked:
 		p.StateWord, p.ScreenClass = "HANDS OFF", "s-blocked"
 		p.Button = buttonVM{Class: "", Label: "I want to play", Sub: "held at the watchman", Disabled: true}
 	default:
@@ -61,7 +69,7 @@ func present(v arcade.View) panelVM {
 	}
 
 	p.Lamps = []lampVM{
-		{Label: "sunshine", Class: "green", On: v.Play.OK},
+		{Label: v.Engine, Class: "green", On: v.Play.OK},
 		{Label: "watchman", Class: watchClass(v), On: v.Watchman.Known},
 		{Label: "fault", Class: "red", On: v.Fault != ""},
 	}
@@ -94,11 +102,28 @@ func ports(v arcade.View) string {
 type clientsVM struct {
 	Project string
 	Label   string
-	Admin   bool
-	Ready   bool
-	Devices []arcade.Device
-	Err     string
-	Notice  string
+	// Engine: sunshine | wolf; EngineWord is how the page names it
+	Engine      string
+	EngineWord  string
+	HandStarted bool
+	Admin       bool
+	Ready       bool
+	Me          string
+	// the drawers of an appliance: what a device can be pointed at. Every
+	// one for an admin; a player only needs to know whether they have one
+	HasDrawer bool
+	Drawers   []drawerVM
+	Devices   []arcade.Device
+	Seats     []arcade.Seat
+	Refusal   arcade.Refusal
+	Err       string
+	Notice    string
+}
+
+type drawerVM struct {
+	Name   string
+	Label  string
+	Shared bool
 }
 
 type blockVM struct {

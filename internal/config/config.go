@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -49,18 +50,87 @@ type Veilleur struct {
 
 // Project is one thing a person can play. The page renders one card per
 // entry, so a second project is data, not a release.
+//
+// A project runs on ONE of two engines: Sunshine (a console — one machine,
+// one desktop, pairing at its web UI) or Wolf (an appliance — a seat per
+// person, each in its own drawer, pairing through the engine's API). Exactly
+// one of the two blocks is set.
 type Project struct {
 	Label string `yaml:"label"`
 	// Target is the Le Veilleur target this project rides on. Naming it
 	// (instead of assuming the project's own name) is what keeps the client
 	// generic — see the vision: a project page, never a console page.
+	// EMPTY means hand-started: nobody can wake it from here, and the panel
+	// says so instead of offering a button that would do nothing.
 	Target   string   `yaml:"target"`
 	Sunshine Sunshine `yaml:"sunshine"`
-	Connect  Connect  `yaml:"connect"`
+	Wolf     Wolf     `yaml:"wolf"`
+	// People are the drawers of a Wolf project: the folder a paired device is
+	// pointed at, and the uid its seats then run as. Keyed by the person's
+	// account name at the gateway — one account, one drawer — except a
+	// SHARED drawer (a living-room device everybody uses), which has no
+	// account behind it and only an admin may point a device at.
+	People  map[string]Person `yaml:"people"`
+	Connect Connect           `yaml:"connect"`
 	// WaitMinutes is the target's min_uptime, copied here for one purpose:
 	// telling a person how long the machine will wait for them. Le Veilleur
 	// owns the number; this is the honest way to say it out loud.
 	WaitMinutes int `yaml:"wait_minutes"`
+}
+
+// Engine names which of the two a project runs on.
+func (p Project) Engine() string {
+	if p.Wolf.ProbeURL != "" {
+		return "wolf"
+	}
+	return "sunshine"
+}
+
+// HandStarted reports a project the watchman does not know: it is on when
+// somebody started it, and nothing here can change that.
+func (p Project) HandStarted() bool { return p.Target == "" }
+
+// Drawer returns a person's drawer, if the project has one for that name.
+func (p Project) Drawer(name string) (Person, bool) {
+	d, ok := p.People[name]
+	return d, ok
+}
+
+// Drawers lists the drawers, people first, shared last, each group by name.
+func (p Project) Drawers() []string {
+	var people, shared []string
+	for n, d := range p.People {
+		if d.Shared {
+			shared = append(shared, n)
+		} else {
+			people = append(people, n)
+		}
+	}
+	sort.Strings(people)
+	sort.Strings(shared)
+	return append(people, shared...)
+}
+
+// Wolf is the seat engine of an appliance. ProbeURL is its plain-http
+// `/serverinfo` — what an unpaired Moonlight reads, no credential. APIURL is
+// the engine's own API, which authenticates NOBODY: on the appliance it is a
+// unix socket, and it reaches this program through a bridge on one port
+// whose firewall row is the whole lock. So the client uses named operations
+// only (pair, point a client at a drawer, list, sessions, stop) and never a
+// general proxy — a compromised panel must not become an engine shell.
+type Wolf struct {
+	ProbeURL string   `yaml:"probe_url"`
+	APIURL   string   `yaml:"api_url"`
+	Timeout  Duration `yaml:"timeout"`
+}
+
+// Person is one drawer: the seat's uid/gid, a label, and whether it is a
+// shared drawer with no account behind it.
+type Person struct {
+	Label  string `yaml:"label"`
+	UID    int    `yaml:"uid"`
+	GID    int    `yaml:"gid"`
+	Shared bool   `yaml:"shared"`
 }
 
 // Sunshine has two doors and Dejarik uses both, on purpose.
@@ -136,16 +206,41 @@ func Load(path string) (*Config, error) {
 	}
 	for _, n := range c.names {
 		p := c.Projects[n]
-		if p.Target == "" {
-			return nil, fmt.Errorf("project %q: no veilleur target named", n)
-		}
-		if p.Sunshine.ProbeURL == "" {
-			return nil, fmt.Errorf("project %q: no sunshine probe_url — there would be only one truth", n)
+		switch {
+		case p.Sunshine.ProbeURL != "" && p.Wolf.ProbeURL != "":
+			return nil, fmt.Errorf("project %q: both a sunshine and a wolf block — a project runs on one engine", n)
+		case p.Sunshine.ProbeURL == "" && p.Wolf.ProbeURL == "":
+			return nil, fmt.Errorf("project %q: no sunshine or wolf probe_url — there would be only one truth", n)
 		}
 		if p.Sunshine.Timeout == 0 {
 			p.Sunshine.Timeout = Duration(3 * time.Second)
-			c.Projects[n] = p
 		}
+		if p.Wolf.Timeout == 0 {
+			p.Wolf.Timeout = Duration(3 * time.Second)
+		}
+		if p.Engine() == "wolf" {
+			if p.Wolf.APIURL == "" {
+				return nil, fmt.Errorf("project %q: a wolf project needs api_url — pairing and the seats live there", n)
+			}
+			seen := map[int]string{}
+			for name, d := range p.People {
+				if d.UID <= 0 {
+					return nil, fmt.Errorf("project %q: drawer %q has no uid — a seat has to run as somebody", n, name)
+				}
+				if other, dup := seen[d.UID]; dup {
+					return nil, fmt.Errorf("project %q: drawers %q and %q share uid %d — a live seat is told apart by its uid", n, other, name, d.UID)
+				}
+				seen[d.UID] = name
+				if d.GID == 0 {
+					d.GID = d.UID
+				}
+				if d.Label == "" {
+					d.Label = name
+				}
+				p.People[name] = d
+			}
+		}
+		c.Projects[n] = p
 	}
 	if c.Veilleur.URL == "" {
 		return nil, fmt.Errorf("no veilleur url: nothing could ever be woken")
