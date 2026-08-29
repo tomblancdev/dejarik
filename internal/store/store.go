@@ -37,6 +37,17 @@ type Owner struct {
 
 type file struct {
 	Owners []Owner `json:"owners"`
+	// Linked is the appliance's last report per "project/sidecar": which
+	// drawers hold a companion's link (Le Juke's Spotify), and when it said
+	// so. The appliance says it all again seconds after it is up; this only
+	// keeps a card honest while it sleeps.
+	Linked map[string]Linked `json:"linked,omitempty"`
+}
+
+// Linked is one such report.
+type Linked struct {
+	Drawers []string  `json:"drawers"`
+	At      time.Time `json:"at"`
 }
 
 // Store is safe for concurrent use.
@@ -150,6 +161,29 @@ func (s *Store) Of(uuid string) (Owner, bool) {
 		}
 	}
 	return Owner{}, false
+}
+
+// SetLinked records the appliance's last report on one companion of one
+// project: the drawers that hold its link, and when it said so.
+func (s *Store) SetLinked(project, sidecar string, drawers []string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.f.Linked == nil {
+		s.f.Linked = map[string]Linked{}
+	}
+	s.f.Linked[project+"/"+sidecar] = Linked{Drawers: append([]string(nil), drawers...), At: at}
+	return s.save()
+}
+
+// LinkedReports returns every report kept, by "project/sidecar".
+func (s *Store) LinkedReports() map[string]Linked {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make(map[string]Linked, len(s.f.Linked))
+	for k, v := range s.f.Linked {
+		out[k] = v
+	}
+	return out
 }
 
 // All returns every claim, newest first.

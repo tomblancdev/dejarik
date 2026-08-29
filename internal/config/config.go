@@ -81,6 +81,38 @@ type Project struct {
 	// telling a person how long the machine will wait for them. Le Veilleur
 	// owns the number; this is the honest way to say it out loud.
 	WaitMinutes int `yaml:"wait_minutes"`
+	// Links are the external accounts a person may link to their drawer —
+	// the file a COMPANION beside their seats needs (Le Juke: Spotify's
+	// stored credentials, a receiver under whatever they play). Keyed by the
+	// companion's name on the appliance; the appliance reports which drawers
+	// hold each and takes what is pending through /api/projects/{name}/
+	// links/sync, from the Foyer's sources. Empty = nothing to link.
+	Links map[string]Link `yaml:"links"`
+}
+
+// Link is one linkable account. Kind names the provider (spotify — the only
+// one today); ClientID the house's own app at that provider (Authorization
+// Code with PKCE: no secret anywhere, so it may sit in this readable file);
+// Scopes what the token must carry (the companion's need: `streaming`);
+// Label what the card says.
+type Link struct {
+	Kind     string   `yaml:"kind"`
+	ClientID string   `yaml:"client_id"`
+	Scopes   []string `yaml:"scopes"`
+	Label    string   `yaml:"label"`
+}
+
+// HasLinks reports whether the project offers anything to link.
+func (p Project) HasLinks() bool { return len(p.Links) > 0 }
+
+// LinkNames lists the links, by name.
+func (p Project) LinkNames() []string {
+	out := make([]string, 0, len(p.Links))
+	for n := range p.Links {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Foyer is the hub tile of an appliance. Title is the tile's name in the
@@ -250,6 +282,30 @@ func Load(path string) (*Config, error) {
 				if p.Foyer.RenderNode == "" {
 					p.Foyer.RenderNode = "/dev/dri/renderD128"
 				}
+			}
+			for name, l := range p.Links {
+				if l.Kind == "" {
+					l.Kind = name
+				}
+				if l.Kind != "spotify" {
+					return nil, fmt.Errorf("project %q: link %q is of kind %q — spotify is the one this program knows", n, name, l.Kind)
+				}
+				if strings.TrimSpace(l.ClientID) == "" {
+					return nil, fmt.Errorf("project %q: link %q has no client_id — the house's own app at %s", n, name, l.Kind)
+				}
+				if len(l.Scopes) == 0 {
+					l.Scopes = []string{"streaming"}
+				}
+				if l.Label == "" {
+					l.Label = strings.ToUpper(l.Kind[:1]) + l.Kind[1:]
+				}
+				if !p.HasFoyer() {
+					return nil, fmt.Errorf("project %q: links need the foyer's sources — the appliance reports and takes them from there", n)
+				}
+				if strings.TrimSpace(c.BaseURL) == "" {
+					return nil, fmt.Errorf("project %q: links need base_url — the provider sends the person back to it", n)
+				}
+				p.Links[name] = l
 			}
 			seen := map[int]string{}
 			for name, d := range p.People {

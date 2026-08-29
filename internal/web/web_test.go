@@ -390,12 +390,21 @@ func session(id, app, ip string, uid int) map[string]any {
 // 3001), one more (other, 3002) and the shared drawer of the living room.
 func wolfServer(t *testing.T) (http.Handler, *fakeWolf, *arcade.Service, func(time.Time)) {
 	t.Helper()
+	s, f, svc, tick := wolfServerS(t)
+	return s.Handler(), f, svc, tick
+}
+
+// wolfServerS is the server itself, for a test that reaches inside it (the
+// links hub).
+func wolfServerS(t *testing.T) (*Server, *fakeWolf, *arcade.Service, func(time.Time)) {
+	t.Helper()
 	f := &fakeWolf{pending: true}
 	eng := httptest.NewServer(f.handler())
 	t.Cleanup(eng.Close)
 	p := t.TempDir() + "/config.yaml"
 	if err := os.WriteFile(p, []byte(`
 listen: ":0"
+base_url: "https://panel.example.com"
 data_dir: `+t.TempDir()+`
 auth:
   trusted_proxies: ["192.0.2.10/32"]
@@ -421,6 +430,8 @@ projects:
     foyer:
       title: "Le Foyer"
       sources: ["203.0.113.23"]
+    links:
+      spotify: { client_id: "abc123", scopes: [streaming], label: "Spotify" }
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +461,7 @@ projects:
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s.Handler(), f, svc, tick
+	return s, f, svc, tick
 }
 
 func as(r *http.Request, user, groups string) *http.Request {

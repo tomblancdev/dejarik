@@ -61,6 +61,20 @@ projects:
       title: "Le Foyer"
       sources: ["203.0.113.23"]
       render_node: /dev/dri/renderD128
+    # what a person may LINK to their drawer: an external account a companion
+    # beside their seats needs (Le Juke: a Spotify Connect receiver, music
+    # under whatever they play). Keyed by the companion's name on the
+    # appliance. The house's own app at the provider, Authorization Code
+    # with PKCE - no secret anywhere, so the client id may sit here; the
+    # provider sends the person back to <base_url>/links/callback (register
+    # exactly that). The appliance reports and takes links through
+    # /api/projects/<name>/links/sync, from the foyer's sources.
+    links:
+      spotify:
+        kind: spotify
+        client_id: "0123456789abcdef0123456789abcdef"
+        scopes: [streaming]
+        label: "Spotify"
 
   # A CONSOLE: one machine, one desktop, Sunshine; pairing relayed to its web
   # UI with the one account it has.

@@ -17,7 +17,10 @@
   var P = body.dataset.project, SESSION = body.dataset.session, CAPS = body.dataset.caps || '';
   var Q = '?session=' + encodeURIComponent(SESSION) + '&caps=' + encodeURIComponent(CAPS);
   var data = null;
-  var ui = { focus: null, pin: null, msg: null, busy: false };
+  // qr: the link card whose code is shown (Mon vestiaire) — the page's own,
+  // like the ring and a PIN; cleared by hand (B) or once the link lands
+  var ui = { focus: null, pin: null, msg: null, busy: false, qr: null };
+  var SHELVES = ['rooms', 'house', 'mine'];
 
   // --- the server's data ---------------------------------------------------
   var VERSION = body.dataset.version || '';
@@ -28,7 +31,13 @@
         // a new panel landed under an open seat: this page is the old one —
         // reload it, unless a PIN is being turned (the next poll will)
         if (d && VERSION && d.version && d.version !== VERSION && !ui.pin) { window.location.reload(); return; }
-        if (d) { data = d; render(); }
+        if (d) {
+          data = d;
+          // the code shown on a link card goes away by itself once the link
+          // landed (the card no longer offers it)
+          if (ui.qr) { var still = cards().some(function (c) { return c.key === ui.qr && c.acts.some(function (a) { return a.verb === 'qr'; }); }); if (!still) ui.qr = null; }
+          render();
+        }
       })
       .catch(function () {})
       .then(function () { window.setTimeout(poll, ((data && data.poll_seconds) || 3) * 1000); });
@@ -40,7 +49,9 @@
     var form = new URLSearchParams({ session: SESSION, caps: CAPS });
     form.set(verb === 'open' ? 'app' : 'room', target);
     if (pin) form.set('pin', pin);
-    fetch('/foyer/' + P + '/' + verb, { method: 'POST', body: form,
+    // a link's unlink names its sidecar in the path, not the body
+    var url = verb === 'unlink' ? '/foyer/' + P + '/links/' + encodeURIComponent(target) + '/unlink' : '/foyer/' + P + '/' + verb;
+    fetch(url, { method: 'POST', body: form,
       headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' } })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (x) {
@@ -84,6 +95,18 @@
       }
       out.push({ key: 'house:' + h.id, shelf: 'house', title: h.title, icon: h.icon ? h.id : '', sub: sub, acts: acts, busy: busy });
     });
+    // Mon vestiaire: what is yours — an account tied to your drawer, riding
+    // under every seat you open. The link itself happens on your PHONE (the
+    // provider's page belongs there, not in a stream): the card shows a code
+    // to scan, and flips by itself once the appliance has taken the link.
+    if (known) (data.links || []).forEach(function (l) {
+      var st = l.status || {}, acts = [], sub;
+      if (st.linked) { sub = 'linked · under every seat you open' + (st.reported_at ? ' · the appliance said so at ' + hhmm(st.reported_at) : ''); acts.push({ glyph: 'Y', label: 'unlink', verb: 'unlink', target: l.sidecar }); }
+      else if (st.pending) sub = 'linking… the appliance takes it within seconds';
+      else if (st.unlinking) sub = 'unlinking…';
+      else { sub = (st.reported ? 'not linked' : 'the appliance has not said yet') + ' · music under your game, from your phone'; acts.push({ glyph: 'A', label: 'link — show the code', verb: 'qr', target: l.sidecar }); }
+      out.push({ key: 'link:' + l.sidecar, shelf: 'mine', title: l.label, icon: '', sub: sub, acts: acts, qr: l.qr });
+    });
     return out;
   }
   function current() {
@@ -108,19 +131,24 @@
     msg.innerHTML = ui.msg ? '<div class="' + ui.msg.kind + '">' + esc(ui.msg.text) + '</div>' : '';
     var n = document.getElementById('rooms-n');
     if (data) { var inn = (data.rooms || []).reduce(function (a, r) { return a + r.in; }, 0); n.textContent = data.rooms.length ? (data.rooms.length + ' room' + (data.rooms.length > 1 ? 's' : '') + ' · ' + inn + ' in') : ''; }
-    ['rooms', 'house'].forEach(function (shelf) {
+    SHELVES.forEach(function (shelf) {
       var el = document.getElementById(shelf), html = '';
+      if (!el) return;
       var mine = list.filter(function (c) { return c.shelf === shelf; });
-      if (!mine.length) html = '<div class="empty">' + (shelf === 'rooms' ? 'none — open one below, and the others will find it here' : (data ? 'the house has no game on the shelf' : 'reading the house…')) + '</div>';
+      if (!mine.length) html = '<div class="empty">' + (shelf === 'rooms' ? 'none — open one below, and the others will find it here' : shelf === 'mine' ? (data && data.known ? 'nothing to link here' : 'a device nobody pointed yet has no locker') : (data ? 'the house has no game on the shelf' : 'reading the house…')) + '</div>';
       mine.forEach(function (c) {
         var focus = c.key === ui.focus;
         var pin = focus && ui.pin;
-        html += '<div class="card' + (focus ? ' focus' : '') + (c.busy ? ' busy' : '') + '" data-key="' + esc(c.key) + '">';
+        var qr = c.qr && ui.qr === c.key;
+        html += '<div class="card' + (focus ? ' focus' : '') + (c.busy ? ' busy' : '') + (qr ? ' wide' : '') + '" data-key="' + esc(c.key) + '">';
         html += '<div class="top"><span class="art">' + (c.icon ? '<img src="/foyer/' + P + '/icon/' + encodeURIComponent(c.icon) + Q + '" alt="">' : esc(c.title.slice(0, 1))) + '</span>';
         html += '<span class="name">' + esc(c.title) + '</span>' + (c.locked ? '<span class="lock">PIN</span>' : '') + '</div>';
-        html += '<div class="sub">' + (pin ? (ui.pin.verb === 'open' ? 'lock with a PIN — turn the wheels' : 'its four digits, please') : c.sub) + '</div>';
+        html += '<div class="sub">' + (pin ? (ui.pin.verb === 'open' ? 'lock with a PIN — turn the wheels' : 'its four digits, please') : qr ? 'scan with your phone — it opens the panel, signed in as you, then ' + esc(c.title) + "'s own page; this card flips when the link has landed" : c.sub) + '</div>';
+        if (qr) html += '<img class="qr" src="' + esc(c.qr) + Q + '" alt="the code to scan">';
         if (c.players && !pin) { html += '<div class="players">'; for (var i = 0; i < c.players[1]; i++) html += '<i' + (i < c.players[0] ? '' : ' class="off"') + '></i>'; html += ' ' + c.players[0] + ' in</div>'; }
-        if (pin) {
+        if (qr) {
+          html += '<div class="acts"><span class="key dim" data-glyph="B"><b>B</b>hide the code</span></div>';
+        } else if (pin) {
           html += '<div class="pinrow"><span class="wheels">';
           ui.pin.digits.forEach(function (d, i) { html += '<span class="wheel' + (i === ui.pin.idx ? ' on' : '') + '" data-wheel="' + i + '"><b>' + d + '</b></span>'; });
           html += '</span></div>';
@@ -146,12 +174,14 @@
       else if (glyph === 'B') { ui.pin = null; render(); }
       return;
     }
-    if (glyph === 'B') { ui.msg = null; render(); return; }
+    if (glyph === 'B') { ui.msg = null; ui.qr = null; render(); return; }
     if (!c) return;
+    if (ui.qr === c.key) return;   // the code is up: B hides it, nothing else presses
     var a = null;
     for (var i = 0; i < c.acts.length; i++) if (c.acts[i].glyph === glyph) a = c.acts[i];
     if (!a) return;
     if (a.pin) { ui.pin = { card: c.key, verb: a.verb, target: a.target, digits: [0, 0, 0, 0], idx: 0 }; ui.msg = null; render(); return; }
+    if (a.verb === 'qr') { ui.qr = c.key; ui.msg = null; render(); return; }
     act(a.verb, a.target);
   }
   function move(dir) {
@@ -175,9 +205,15 @@
     if (dir === 'left' && i > 0) ui.focus = same[i - 1].key;
     else if (dir === 'right' && i < same.length - 1) ui.focus = same[i + 1].key;
     else if (dir === 'up' || dir === 'down') {
-      var other = list.filter(function (x) { return x.shelf !== c.shelf; });
-      if (other.length) ui.focus = other[Math.min(i, other.length - 1)].key;
+      // the next shelf that has a card, in the page's order (three shelves
+      // since Mon vestiaire; the old "the other shelf" assumed two)
+      var at = SHELVES.indexOf(c.shelf), step = dir === 'down' ? 1 : -1;
+      for (var s = at + step; s >= 0 && s < SHELVES.length; s += step) {
+        var other = list.filter(function (x) { return x.shelf === SHELVES[s]; });
+        if (other.length) { ui.focus = other[Math.min(i, other.length - 1)].key; break; }
+      }
     }
+    if (ui.qr && ui.qr !== ui.focus) ui.qr = null;
     render();
   }
   function digit(d) {

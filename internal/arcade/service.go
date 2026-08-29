@@ -145,6 +145,30 @@ func (s *Service) SetClock(f func() time.Time) { s.now = f }
 // SetPairWait is for tests.
 func (s *Service) SetPairWait(d time.Duration) { s.pairWait = d }
 
+// Store is the one fact this program owns, lent to the links hub for its
+// memory of the appliance's reports.
+func (s *Service) Store() *store.Store { return s.st }
+
+// DrawerOf is drawerFor for callers outside the domain (the links): whose
+// drawer a person may act on — their own; an admin, anybody's or a shared one.
+func (s *Service) DrawerOf(name, forWhom string, who auth.Identity) (string, error) {
+	p, ok := s.cfg.Projects[name]
+	if !ok {
+		return "", ErrNoProject
+	}
+	if _, isWolf := s.wolf[name]; !isWolf {
+		return "", fmt.Errorf("a console has no drawers")
+	}
+	return s.drawerFor(p, strings.TrimSpace(forWhom), who)
+}
+
+// FromAppliance reports whether an address is one the appliance speaks from
+// (the Foyer's sources) — the whole authentication of what the appliance
+// reports and takes.
+func (s *Service) FromAppliance(name string, ip net.IP) bool {
+	return inAny(s.foyer[name], ip)
+}
+
 // Run keeps the truths fresh while nobody has the page open — the guard has
 // to watch the seats whether or not somebody is looking. Returns when ctx
 // ends.

@@ -58,6 +58,9 @@ type foyerState struct {
 	Known       bool            `json:"known"`
 	Rooms       []arcade.Room   `json:"rooms"`
 	HouseShelf  []arcade.Shelf  `json:"house_shelf"`
+	// Links is the guest's own shelf (Mon vestiaire): the accounts tied to
+	// their drawer, each with the QR the phone scans to link it
+	Links       []linkCard      `json:"links"`
 	Notice      string          `json:"notice,omitempty"`
 	PollSeconds int             `json:"poll_seconds"`
 }
@@ -65,7 +68,10 @@ type foyerState struct {
 func (s *Server) state(ctx context.Context, name string, g arcade.Guest, notice string) foyerState {
 	p := s.cfg.Projects[name]
 	st := foyerState{Project: name, Label: p.Label, Title: p.Foyer.Title, House: s.cfg.House, Version: s.version,
-		Guest: g, Known: g.Known(), Notice: notice, PollSeconds: 3, Rooms: []arcade.Room{}, HouseShelf: []arcade.Shelf{}}
+		Guest: g, Known: g.Known(), Notice: notice, PollSeconds: 3, Rooms: []arcade.Room{}, HouseShelf: []arcade.Shelf{}, Links: []linkCard{}}
+	if l := s.foyerLinks(name, g); l != nil {
+		st.Links = l
+	}
 	if v, err := s.svc.Foyer(ctx, name, g); err == nil {
 		if v.Rooms != nil {
 			st.Rooms = v.Rooms

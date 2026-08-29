@@ -50,6 +50,10 @@ body.foyer{height:100vh;margin:0;font-size:clamp(16px,1.5vw,30px);overflow:hidde
 .foyer .key b{display:inline-grid;place-items:center;width:1.5em;height:1.5em;border-radius:50%;background:var(--phos);color:#0b120a;font-weight:700;font-size:.9em;text-shadow:none;box-shadow:0 0 8px rgba(200,255,0,.5)}
 .foyer .key.dim{opacity:.55}
 .foyer .card.busy{opacity:.55}
+/* a link card showing its code: wider, and the code itself is left black on
+   white — a phone camera reads that, not phosphor */
+.foyer .card.wide{width:22em}
+.foyer .card .qr{width:10.5em;height:10.5em;align-self:center;border:.45em solid #fff;border-radius:3px;background:#fff;image-rendering:pixelated;box-shadow:0 0 18px rgba(200,255,0,.35)}
 .foyer .wheels{display:inline-flex;gap:.35em}
 .foyer .wheel{position:relative;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:1.5em;height:2em;
   border:1px solid rgba(200,255,0,.45);border-radius:2px;background:rgba(0,0,0,.35);user-select:none;cursor:pointer}

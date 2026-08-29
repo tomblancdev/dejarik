@@ -139,6 +139,39 @@
     {{else}}
     <div class="note">No room open. A room is opened from Le Foyer, the hub tile in Moonlight.</div>
     {{end}}
+
+    {{if .HasLinks}}
+    <div class="seam"></div>
+    <div class="between">
+      <div class="eng t11">my accounts{{if .Admin}} // every drawer{{end}}</div>
+      <div class="eng t9" style="opacity:.7">{{len .Links}} link{{if ne (len .Links) 1}}s{{end}}</div>
+    </div>
+    {{if .Links}}
+    <div class="devs">
+      {{range .Links}}
+      <div class="dev">
+        {{if .Status.Linked}}
+        <form method="post" action="/unlink/{{$.Project}}"
+              hx-post="/unlink/{{$.Project}}" hx-target="#project-{{$.Project}}" hx-swap="outerHTML"
+              hx-confirm="Unlink {{.Label}} from {{.DrawerLabel}}'s drawer? Its seats stop showing up in that account.">
+          <input type="hidden" name="link" value="{{.Sidecar}}">
+          <input type="hidden" name="for" value="{{.Drawer}}">
+          <button class="tog" type="submit" title="unlink {{.Label}}" aria-label="unlink {{.Label}} from {{.DrawerLabel}}'s drawer"><b></b></button>
+        </form>
+        {{else if or .Status.Pending .Status.Unlinking}}
+        <span class="tog" aria-hidden="true"><b></b></span>
+        {{else}}
+        <a class="pb small" href="/links/{{$.Project}}/{{.Sidecar}}/start?for={{.Drawer}}" title="link {{.Label}} to {{.DrawerLabel}}'s drawer"><span class="cap">link</span></a>
+        {{end}}
+        <div class="lamp {{if .Status.Linked}}green{{else if or .Status.Pending .Status.Unlinking}}amber{{else}}green off{{end}}"><i></i></div>
+        <div class="eng t9">{{.Label}}</div>
+        <div class="eng t9" style="opacity:.6">{{.DrawerLabel}}{{if .Shared}} · shared{{end}} · {{.Word}}{{if .At}} · the appliance said so at {{.At}}{{end}}</div>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+    <div class="note">An account linked to a drawer rides under every seat of that drawer — a receiver beside the game, driven from your phone. LINK opens the provider's own page; the appliance takes it from there, woken if it sleeps. The word is the appliance's last report, not a guess. Flip the switch down to unlink.</div>
+    {{end}}
     {{end}}
   </div>
 </section>

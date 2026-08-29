@@ -113,7 +113,12 @@ type clientsVM struct {
 	// one for an admin; a player only needs to know whether they have one
 	HasDrawer bool
 	Drawers   []drawerVM
-	Devices   []arcade.Device
+	// the links: an external account tied to a drawer (Le Juke's Spotify —
+	// music under whatever that drawer plays). Yours; every drawer's for an
+	// admin. HasLinks: the project offers any at all
+	HasLinks bool
+	Links    []linkVM
+	Devices  []arcade.Device
 	Seats     []arcade.Seat
 	Refusal   arcade.Refusal
 	Rooms     []arcade.Room

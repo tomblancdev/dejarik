@@ -112,6 +112,43 @@ data, never the page. Artwork is the tile's own icon, fetched once by the
 panel (a seat has no way out of the house) and tinted phosphor. Rooms also
 show on the panel, where an admin may close any.
 
+## Mon vestiaire — an account under your game
+
+A drawer may carry a **companion**: a container the appliance starts beside
+every seat of that drawer, for what the seat's image does not have. The
+first is a Spotify Connect receiver ([Le Juke](https://github.com/tomblancdev/juke)):
+link a Spotify account to your drawer once and *"L'Arcade – RetroDECK"*,
+*"– Steam"*, whatever you open, appears in **that** account's Spotify app
+whenever the seat does — the music mixed under the game, in the stream, the
+phone's slider its fader. The companion needs one file in the drawer: the
+account's stored credentials. Making it was a terminal's job; here it is a
+tap.
+
+**On the panel** (your phone): *my accounts* — **LINK** sends you to the
+provider's own page with the house's app (Authorization Code with **PKCE**:
+no secret anywhere, so the client id sits in the readable config), you
+agree, you land back here, and the short-lived token **waits in memory**
+for the appliance — woken if asleep, since only it can take it. The word on
+the card — *linked · not linked · linking · unlinking · unknown* — is the
+**appliance's last report**, remembered with its time; never a guess. Flip
+the switch to unlink. An admin sees every drawer (the TV's shared one
+included).
+
+**In the stream** (Le Foyer's third shelf): the same card shows a **QR
+code** — scan it with your phone and it opens the panel, signed in as you,
+straight at the provider's page for *this* drawer; the card flips by itself
+when the link has landed. A stream is no place to type a password: the
+phone is.
+
+**The appliance's half** is one endpoint: `POST /api/projects/{name}/links/sync`,
+from the Foyer's sources only — it reports which drawers hold each
+companion's file and takes what is pending (a token, handed once, never
+logged; or a drawer to unlink). The watcher on the appliance
+(`wolf-sidecars`, in the `tomblancdev.arcade` collection) calls it every
+few seconds and runs the companion's `link` mode with the token, as the
+drawer's uid, on the drawer's own folder — outside every app home, so one
+link serves every tile and no golden template ever carries it.
+
 ## Two truths, never collapsed
 
 The whole design is one idea. Dejarik reads **two** sources and never lets
@@ -174,6 +211,10 @@ DELETE /api/projects/{name}/clients/{uuid}
 POST   /api/projects/{name}/clients/{uuid}/point   an admin sends a device to a drawer
 GET    /api/projects/{name}/seats       open seats (yours + shared; all, for admins)
 POST   /api/projects/{name}/seats/{id}/stop        close a seat (yours; any, for admins)
+GET    /api/projects/{name}/rooms       open rooms; POST …/rooms/{id}/stop closes one
+GET    /api/projects/{name}/links       your links (every drawer's, for admins)
+POST   /api/projects/{name}/links/sync  THE APPLIANCE: report who is linked, take what is pending
+GET    /links/{name}/{sidecar}/start    a person's tap: to the provider (then /links/callback)
 GET    /api/me · /healthz · /metrics · /openapi.json
 ```
 
