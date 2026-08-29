@@ -11,6 +11,7 @@ push can tell `.sfc` from `.iso` without asking anybody.
     python3 tools/es-systems.py            # fetch + write
     python3 tools/es-systems.py FILE.xml   # from a local copy
 """
+import re
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -43,8 +44,11 @@ def main() -> None:
         f.write("// lower-cased, with the dot. %d systems.\n" % len(rows))
         f.write("var systems = []System{\n")
         for name, full, exts in rows:
-            f.write("\t{Name: %s, Label: %s, Extensions: []string{%s}},\n" % (
-                gostr(name), gostr(full), ", ".join(gostr(e) for e in exts)))
+            # a label that reads like a hostname (Tiger Game.com) is upstream's
+            # own name, not an environment: the repo's gate takes the marker
+            mark = "  // no-environment: ok (upstream's own name)" if re.search(r"[A-Za-z0-9]\.[a-z]{2,}\b", full) else ""
+            f.write("\t{Name: %s, Label: %s, Extensions: []string{%s}},%s\n" % (
+                gostr(name), gostr(full), ", ".join(gostr(e) for e in exts), mark))
         f.write("}\n")
     print("%s: %d systems" % (OUT, len(rows)))
 
