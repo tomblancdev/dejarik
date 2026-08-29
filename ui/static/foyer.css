@@ -2,14 +2,22 @@
    one thing (a room, a house game) and carries its own actions with the
    pad's glyphs; the ring is the card. The plate fills the viewport: a TV is
    one screen, not a document. */
+/* the plate IS the screen: nothing scrolls but the glass's middle — the
+   header and the legend stay put, the shelves scroll behind them, the ring
+   keeps its card in view. Every flex item down the chain carries
+   min-height:0, or the chain refuses to shrink and the page scrolls instead */
 html{height:100%}
-body.foyer{min-height:100vh;margin:0;font-size:clamp(16px,1.5vw,30px);overflow-x:hidden;display:flex;flex-direction:column}
-.fwrap{max-width:none;width:100%;margin:0;padding:1.2vw;min-height:100vh;flex:1;display:flex;flex-direction:column}
-#foyer{flex:1;display:flex;flex-direction:column}
-.foyer .panel{flex:1;display:flex;flex-direction:column;padding:clamp(16px,1.6vw,34px)}
-.foyer .panel > .stack{flex:1}
-.foyer .crt{flex:1;display:flex;flex-direction:column;padding:clamp(18px,2vw,40px) clamp(20px,2.4vw,48px)}
-.foyer .crt .in{flex:1;font-size:1em;gap:.9em;letter-spacing:.03em}
+body.foyer{height:100vh;margin:0;font-size:clamp(16px,1.5vw,30px);overflow:hidden;display:flex;flex-direction:column}
+.fwrap{max-width:none;width:100%;margin:0;padding:1.2vw;height:100vh;min-height:0;flex:1;display:flex;flex-direction:column}
+#foyer{flex:1;min-height:0;display:flex;flex-direction:column}
+.foyer .panel{flex:1;min-height:0;display:flex;flex-direction:column;padding:clamp(16px,1.6vw,34px)}
+.foyer .panel > .stack{flex:1;min-height:0}
+.foyer .crt{flex:1;min-height:0;display:flex;flex-direction:column;padding:clamp(18px,2vw,40px) clamp(20px,2.4vw,48px)}
+.foyer .crt .in{flex:1;min-height:0;font-size:1em;gap:.9em;letter-spacing:.03em}
+.foyer .scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:.9em;padding-right:.4em;
+  scrollbar-width:thin;scrollbar-color:rgba(200,255,0,.35) transparent}
+.foyer .scroll::-webkit-scrollbar{width:.4em}
+.foyer .scroll::-webkit-scrollbar-thumb{background:rgba(200,255,0,.35);border-radius:2px}
 .foyer .hd{display:flex;justify-content:space-between;align-items:baseline;gap:1em;flex-wrap:wrap;border-bottom:1px solid rgba(200,255,0,.22);padding-bottom:.5em}
 .foyer .hd .t{font-family:var(--stencil-face);font-weight:900;letter-spacing:.16em;text-transform:uppercase;font-size:2.2em;line-height:1;text-shadow:0 0 12px rgba(200,255,0,.35)}
 .foyer .hd .who{font-size:1.05em}
@@ -48,7 +56,7 @@ body.foyer{min-height:100vh;margin:0;font-size:clamp(16px,1.5vw,30px);overflow-x
 .foyer .wheel::after{bottom:-.05em;border-top-color:rgba(200,255,0,.6);border-bottom:0}
 .foyer .wheel.on{border-color:var(--phos);box-shadow:0 0 0 1px var(--phos),0 0 12px rgba(200,255,0,.4)}
 .foyer .pinrow{display:flex;gap:.6em;align-items:center;flex-wrap:wrap}
-.foyer .ft{margin-top:auto;border-top:1px solid rgba(200,255,0,.22);padding-top:.6em;font-size:.78em;display:flex;justify-content:space-between;flex-wrap:wrap;gap:.6em;color:rgba(200,255,0,.6)}
+.foyer .ft{flex:0 0 auto;border-top:1px solid rgba(200,255,0,.22);padding-top:.6em;font-size:.78em;display:flex;justify-content:space-between;flex-wrap:wrap;gap:.6em;color:rgba(200,255,0,.6)}
 .foyer .ft b{color:var(--phos);font-weight:600}
 .foyer .ft .k{display:inline-grid;place-items:center;width:1.4em;height:1.4em;border-radius:50%;border:1px solid var(--phos);color:var(--phos);font-weight:700;font-size:.85em;margin:0 .15em}
 .foyer .empty{color:rgba(200,255,0,.45);padding:.6em .2em;font-size:.9em}
