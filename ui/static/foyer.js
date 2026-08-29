@@ -158,9 +158,13 @@
     }
     var list = cards();
     if (!list.length) return;
-    var c = current() || list[0];
+    // by KEY, never by identity: every cards() call builds new objects
+    var c = null;
+    for (var k = 0; k < list.length; k++) if (list[k].key === ui.focus) c = list[k];
+    if (!c) { ui.focus = list[0].key; render(); return; }
     var same = list.filter(function (x) { return x.shelf === c.shelf; });
-    var i = same.indexOf(c);
+    var i = 0;
+    for (var j = 0; j < same.length; j++) if (same[j].key === c.key) i = j;
     if (dir === 'left' && i > 0) ui.focus = same[i - 1].key;
     else if (dir === 'right' && i < same.length - 1) ui.focus = same[i + 1].key;
     else if (dir === 'up' || dir === 'down') {

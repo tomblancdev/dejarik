@@ -9,6 +9,9 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X main.version=$VERSION" -o /out/dejarik ./cmd/dejarik
 
 FROM scratch
+# the artwork of a house game is fetched over https (Le Foyer): a scratch
+# image carries no trust store, and every certificate is "unknown" without it
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 LABEL org.opencontainers.image.source="https://github.com/tomblancdev/dejarik" \
       org.opencontainers.image.description="Dejarik — the arcade's panel: what can I play, wake it, and my paired devices" \
       org.opencontainers.image.licenses="MIT"

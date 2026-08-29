@@ -8,8 +8,8 @@ body.foyer{min-height:100vh;margin:0;font-size:clamp(16px,1.5vw,30px);overflow-x
 #foyer{flex:1;display:flex;flex-direction:column}
 .foyer .panel{flex:1;display:flex;flex-direction:column;padding:clamp(16px,1.6vw,34px)}
 .foyer .panel > .stack{flex:1}
-.foyer .crt{flex:1;padding:clamp(18px,2vw,40px) clamp(20px,2.4vw,48px)}
-.foyer .crt .in{font-size:1em;gap:.9em;letter-spacing:.03em;min-height:100%}
+.foyer .crt{flex:1;display:flex;flex-direction:column;padding:clamp(18px,2vw,40px) clamp(20px,2.4vw,48px)}
+.foyer .crt .in{flex:1;font-size:1em;gap:.9em;letter-spacing:.03em}
 .foyer .hd{display:flex;justify-content:space-between;align-items:baseline;gap:1em;flex-wrap:wrap;border-bottom:1px solid rgba(200,255,0,.22);padding-bottom:.5em}
 .foyer .hd .t{font-family:var(--stencil-face);font-weight:900;letter-spacing:.16em;text-transform:uppercase;font-size:2.2em;line-height:1;text-shadow:0 0 12px rgba(200,255,0,.35)}
 .foyer .hd .who{font-size:1.05em}
