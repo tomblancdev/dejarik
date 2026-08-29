@@ -7,12 +7,49 @@
 <title>{{.Title}}</title>
 <link rel="stylesheet" href="/static/dejarik.css">
 <link rel="stylesheet" href="/static/foyer.css">
-<script src="/static/htmx-2.0.4.min.js" defer></script>
 <script src="/static/foyer.js" defer></script>
 </head>
-<body class="foyer">
+<body class="foyer" data-project="{{.Project}}" data-session="{{.Session}}" data-caps="{{.Caps}}">
+{{/* A SHELL. The cards are rendered by foyer.js from /state, polled every
+     few seconds; the page keeps its own state (the ring, a PIN in progress)
+     and the poll replaces data, never the page. */}}
 <div class="fwrap">
-{{template "foyer-panel" .}}
+<div id="foyer">
+<section class="panel">
+  <div class="grain"></div><div class="scuff"></div>
+  <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+  <div class="stack">
+    <div class="between">
+      <div class="eng t11">{{if .House}}{{.House}} // {{end}}l'arcade</div>
+      <div class="eng t9" style="opacity:.7">{{.Label}}</div>
+    </div>
+    <div class="seam"></div>
+    <div class="crt s-ready">
+      <div class="in">
+        <div class="hd">
+          <span class="t">{{.Title}}</span>
+          <span class="who" id="who">{{if .Guest.Known}}{{.Guest.Label}}{{if .Guest.Shared}} · the house's{{end}}{{else}}nobody's drawer{{end}} <span class="dim">· {{.Guest.Device}}</span></span>
+        </div>
+        <div id="msg"></div>
+        <div class="shelf"><span>Rooms open in the house</span><span id="rooms-n" class="dim"></span></div>
+        <div class="cards" id="rooms"><div class="empty">reading the house…</div></div>
+        <div class="shelf"><span>The house</span><span class="dim">a room is a game other devices may join · a tile is private</span></div>
+        <div class="cards" id="house"></div>
+        <div class="ft">
+          <span>hold <b>START + UP + RB</b> in a game to come back here · <span class="k">A</span> press <span class="k">X</span> second <span class="k">Y</span> third <span class="k">B</span> back · ◀ ▶ a shelf · ▲ ▼ between shelves</span>
+          <span class="dim">{{if .Guest.Mode}}{{.Guest.Mode}} · {{end}}dejarik {{.Version}}</span>
+        </div>
+        <noscript><div class="bad">This page is drawn by its script, and the browser ran none.</div></noscript>
+      </div>
+    </div>
+    <div class="foot">
+      <div class="eng t9" style="opacity:.7">a room is a game other devices may join · a tile is private</div>
+      <div style="margin-left:auto;display:flex;gap:11px"><span class="rivet"></span><span class="rivet"></span><span class="rivet"></span></div>
+      <div class="hazard" style="width:112px"></div>
+    </div>
+  </div>
+</section>
+</div>
 </div>
 </body>
 </html>
@@ -46,128 +83,4 @@
 </div>
 </body>
 </html>
-{{end}}
-
-{{define "wheels"}}<span class="wheels" data-wheels>
-  <span class="wheel" tabindex="0" data-nav data-key="{{.}}:0" data-wheel><i class="up"></i><b>0</b><i class="dn"></i></span>
-  <span class="wheel" tabindex="0" data-nav data-key="{{.}}:1" data-wheel><i class="up"></i><b>0</b><i class="dn"></i></span>
-  <span class="wheel" tabindex="0" data-nav data-key="{{.}}:2" data-wheel><i class="up"></i><b>0</b><i class="dn"></i></span>
-  <span class="wheel" tabindex="0" data-nav data-key="{{.}}:3" data-wheel><i class="up"></i><b>0</b><i class="dn"></i></span>
-</span>{{end}}
-
-{{define "foyer-panel"}}
-{{/* ONE polled block: the rooms and the house render together, from one
-     read of the engine, every few seconds. The focus (a pad's cursor) is
-     put back by foyer.js after every swap, by the element's data-key. */}}
-<div id="foyer"
-     hx-get="/foyer/{{.Project}}/panel?session={{.Session}}&amp;caps={{.Caps}}" hx-trigger="every {{.PollSeconds}}s"
-     hx-target="this" hx-swap="outerHTML">
-<section class="panel">
-  <div class="grain"></div><div class="scuff"></div>
-  <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
-  <div class="stack">
-
-    <div class="between">
-      <div class="eng t11">{{if .House}}{{.House}} // {{end}}l'arcade</div>
-      <div class="eng t9" style="opacity:.7">{{.Label}}</div>
-    </div>
-    <div class="seam"></div>
-
-    <div class="crt s-ready">
-      <div class="in">
-        <div class="hd">
-          <span class="t">{{.Title}}</span>
-          <span class="who">{{if .Guest.Known}}{{.Guest.Label}}{{if .Guest.Shared}} · the house's{{end}}{{else}}nobody's drawer{{end}} <span class="dim">· {{.Guest.Device}}</span></span>
-        </div>
-
-        {{if .Err}}<div class="bad">{{.Err}}</div>{{end}}
-        {{if .Notice}}<div class="good">{{.Notice}}</div>{{end}}
-        {{if not .Guest.Known}}
-        <div class="dim">This device is pointed at nobody's drawer yet — an admin points it at a person on the panel, and it lands here as them.</div>
-        {{end}}
-
-        <div class="shelf">Rooms open in the house</div>
-        {{if .Rooms}}
-          {{range .Rooms}}
-          <div class="row">
-            <span class="what"><span class="dot"></span> {{.App}} <span class="dim">· opened by {{.Label}} · {{.In}} in{{if .Locked}} · locked{{end}}</span></span>
-            <span class="k">
-              {{if $.Guest.Known}}
-              <form method="post" action="/foyer/{{$.Project}}/join" class="act"
-                    hx-post="/foyer/{{$.Project}}/join" hx-target="#foyer" hx-swap="outerHTML">
-                <input type="hidden" name="session" value="{{$.Session}}">
-                <input type="hidden" name="caps" value="{{$.Caps}}">
-                <input type="hidden" name="room" value="{{.ID}}">
-                <input type="hidden" name="pin" value="">
-                {{if .Locked}}{{template "wheels" (print "join:" .ID)}}{{end}}
-                <button class="btn" type="submit" data-nav data-key="join:{{.ID}}">JOIN</button>
-              </form>
-              {{if .Mine}}
-              <form method="post" action="/foyer/{{$.Project}}/stop" class="act"
-                    hx-post="/foyer/{{$.Project}}/stop" hx-target="#foyer" hx-swap="outerHTML">
-                <input type="hidden" name="session" value="{{$.Session}}">
-                <input type="hidden" name="caps" value="{{$.Caps}}">
-                <input type="hidden" name="room" value="{{.ID}}">
-                <button class="btn ghost" type="submit" data-nav data-key="stop:{{.ID}}">STOP</button>
-              </form>
-              {{end}}
-              {{end}}
-            </span>
-          </div>
-          {{end}}
-        {{else}}
-          <div class="dim">none — open one below, and the others will find it here</div>
-        {{end}}
-
-        <div class="shelf">The house</div>
-        {{range .Shelf}}
-        <div class="row">
-          <span class="what">{{.Title}}{{if .Busy}} <span class="dim">· {{.Busy}}</span>{{end}}</span>
-          <span class="k">
-            {{if not $.Guest.Known}}
-            {{else if .Room}}
-            <form method="post" action="/foyer/{{$.Project}}/join" class="act"
-                  hx-post="/foyer/{{$.Project}}/join" hx-target="#foyer" hx-swap="outerHTML">
-              <input type="hidden" name="session" value="{{$.Session}}">
-              <input type="hidden" name="caps" value="{{$.Caps}}">
-              <input type="hidden" name="room" value="{{.Room}}">
-              <input type="hidden" name="pin" value="">
-              <button class="btn" type="submit" data-nav data-key="rejoin:{{.ID}}">JOIN YOUR ROOM</button>
-            </form>
-            {{else if .Busy}}
-            {{else}}
-            <form method="post" action="/foyer/{{$.Project}}/open" class="act" data-lockable
-                  hx-post="/foyer/{{$.Project}}/open" hx-target="#foyer" hx-swap="outerHTML">
-              <input type="hidden" name="session" value="{{$.Session}}">
-              <input type="hidden" name="caps" value="{{$.Caps}}">
-              <input type="hidden" name="app" value="{{.ID}}">
-              <input type="hidden" name="pin" value="">
-              <button class="btn" type="submit" data-nav data-key="open:{{.ID}}">OPEN A ROOM</button>
-              <button class="btn ghost" type="button" data-nav data-key="lock:{{.ID}}" data-lock>LOCK WITH A PIN</button>
-              <span class="locked hidden" data-locked>
-                {{template "wheels" (print "wheel:" .ID)}}
-                <button class="btn" type="submit" data-nav data-key="openlocked:{{.ID}}">OPEN LOCKED</button>
-              </span>
-            </form>
-            {{end}}
-          </span>
-        </div>
-        {{end}}
-        {{if not .Shelf}}<div class="dim">the house has no game on the shelf — the catalogue is empty, or the engine is silent</div>{{end}}
-
-        <div class="ft">
-          <span>hold <b>START + UP + RB</b> in a game to come back here · <b>A</b> presses · <b>B</b> backs out</span>
-          <span class="dim">{{if .Guest.Mode}}{{.Guest.Mode}} · {{end}}dejarik {{.Version}}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="foot">
-      <div class="eng t9" style="opacity:.7">a room is a game other devices may join · a tile is private</div>
-      <div style="margin-left:auto;display:flex;gap:11px"><span class="rivet"></span><span class="rivet"></span><span class="rivet"></span></div>
-      <div class="hazard" style="width:112px"></div>
-    </div>
-  </div>
-</section>
-</div>
 {{end}}

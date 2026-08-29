@@ -100,9 +100,17 @@ And seats on the hub tile are **exempt from the guard**: the page holds no
 save, and a person's phone and TV both sitting in the Foyer is the normal
 way into a room, not a clash.
 
-A pad drives the page (the Gamepad API: D-pad or stick to move the ring,
-A presses, B backs out of a PIN); so do arrow keys, a mouse and a finger.
-Rooms also show on the panel, where an admin may close any.
+The page is a **hub of cards**: each room and each house game is one card
+carrying its own actions with the pad's glyphs — **A** the first (open a
+room, join), **X** the second (lock with a PIN), **Y** the third (stop, on a
+room that is yours), **B** backs out; ◀ ▶ walk a shelf, ▲ ▼ change shelves;
+in PIN mode ◀ ▶ move between the wheels and ▲ ▼ turn one. Arrow keys,
+Enter/x/y/Escape, the digits, a mouse and a finger do the same. The page
+keeps its *own* state (the ring, a PIN in progress) and renders the cards
+from `/foyer/<project>/state`, polled every few seconds: a poll replaces
+data, never the page. Artwork is the tile's own icon, fetched once by the
+panel (a seat has no way out of the house) and tinted phosphor. Rooms also
+show on the panel, where an admin may close any.
 
 ## Two truths, never collapsed
 

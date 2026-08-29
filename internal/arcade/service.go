@@ -68,6 +68,7 @@ type Service struct {
 	roomNo    map[string]int
 	roomStops map[string]int
 	foyer     map[string][]*net.IPNet
+	icons     map[string]icon
 }
 
 // New wires the clients. Secrets arrive by environment, never from the

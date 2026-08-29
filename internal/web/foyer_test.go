@@ -14,7 +14,8 @@ import (
 const hub = "900000001" // the Foyer tile's app id at the fake engine
 const retro = "261696729"
 
-// fromSeat is a request the way a seat's kiosk sends it: from the appliance.
+// fromSeat is a request the way a seat's page sends it: from the appliance,
+// asking for JSON.
 func fromSeat(method, path string, form url.Values) *http.Request {
 	var r *http.Request
 	if method == http.MethodGet {
@@ -23,12 +24,58 @@ func fromSeat(method, path string, form url.Values) *http.Request {
 		r = httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
 		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
+	r.Header.Set("Accept", "application/json")
 	r.RemoteAddr = "203.0.113.23:40000"
 	return r
 }
 
 func seat(session string) url.Values {
 	return url.Values{"session": {session}, "caps": {base64.RawURLEncoding.EncodeToString([]byte("video/x-raw(memory:DMABuf), format=(string)RGBA"))}}
+}
+
+type stateJSON struct {
+	Known bool `json:"known"`
+	Guest struct {
+		Person, Label string
+		Shared        bool
+	} `json:"guest"`
+	Rooms []struct {
+		ID, App, Person string
+		Locked, Mine    bool
+		In              int
+	} `json:"rooms"`
+	House []struct {
+		ID, Title, Room, Busy string
+	} `json:"house_shelf"`
+	Notice string `json:"notice"`
+	Error  string `json:"error"`
+}
+
+func state(t *testing.T, h http.Handler, session string) stateJSON {
+	t.Helper()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf/state", seat(session)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("state: %d %s", w.Code, w.Body.String())
+	}
+	var st stateJSON
+	if err := json.Unmarshal(w.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+// verb posts one of the Foyer's verbs and returns the status and the answer.
+func verb(h http.Handler, session, v string, kv ...string) (int, stateJSON) {
+	form := seat(session)
+	for i := 0; i+1 < len(kv); i += 2 {
+		form.Set(kv[i], kv[i+1])
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, fromSeat(http.MethodPost, "/foyer/wolf/"+v, form))
+	var st stateJSON
+	_ = json.Unmarshal(w.Body.Bytes(), &st)
+	return w.Code, st
 }
 
 func TestFoyerIsReadFromASeatOnly(t *testing.T) {
@@ -56,6 +103,12 @@ func TestFoyerIsReadFromASeatOnly(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("a project without a foyer answered %d", w.Code)
 	}
+	// the page is a shell carrying the session for its script
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf", seat("111")))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `data-session="111"`) || !strings.Contains(w.Body.String(), "foyer.js") {
+		t.Fatalf("the shell: %d %s", w.Code, w.Body.String()[:300])
+	}
 }
 
 func TestFoyerKnowsWhoYouAreFromThePairing(t *testing.T) {
@@ -64,21 +117,23 @@ func TestFoyerKnowsWhoYouAreFromThePairing(t *testing.T) {
 	f.sessions = []map[string]any{session("111", hub, "203.0.113.30", 3001), session("222", hub, "203.0.113.31", 3999)}
 	f.mu.Unlock()
 
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf", seat("111")))
-	body := w.Body.String()
-	if w.Code != http.StatusOK || !strings.Contains(body, "someone") || !strings.Contains(body, "OPEN A ROOM") {
-		t.Fatalf("someone's page: %d %s", w.Code, body)
+	st := state(t, h, "111")
+	if !st.Known || st.Guest.Person != "someone" || len(st.House) != 2 {
+		t.Fatalf("someone's state: %+v", st)
 	}
-	if strings.Contains(body, "Le Foyer</span>") && strings.Contains(body, `name="app" value="`+hub+`"`) {
-		t.Fatal("the hub offers a room on itself")
+	for _, x := range st.House {
+		if x.ID == hub {
+			t.Fatal("the hub offers a room on itself")
+		}
 	}
 	// a device nobody pointed: told so, offered nothing
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf", seat("222")))
-	body = w.Body.String()
-	if !strings.Contains(body, "nobody's drawer") || strings.Contains(body, "OPEN A ROOM") {
-		t.Fatalf("nobody's page: %s", body)
+	st = state(t, h, "222")
+	if st.Known || st.Guest.Person != "" {
+		t.Fatalf("nobody's state: %+v", st)
+	}
+	code, ans := verb(h, "222", "open", "app", retro)
+	if code != http.StatusBadRequest || !strings.Contains(ans.Error, "nobody's") {
+		t.Fatalf("nobody opened a room: %d %+v", code, ans)
 	}
 }
 
@@ -89,12 +144,9 @@ func TestOpenARoomJoinItStopIt(t *testing.T) {
 	f.mu.Unlock()
 
 	// someone opens a room on RetroDECK
-	form := seat("111")
-	form.Set("app", retro)
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodPost, "/foyer/wolf/open", form))
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("open: %d %s", w.Code, w.Body.String())
+	code, ans := verb(h, "111", "open", "app", retro)
+	if code != http.StatusOK || !strings.Contains(ans.Notice, "Room open on RetroDECK") {
+		t.Fatalf("open: %d %+v", code, ans)
 	}
 	f.mu.Lock()
 	if len(f.created) != 1 {
@@ -117,18 +169,13 @@ func TestOpenARoomJoinItStopIt(t *testing.T) {
 	f.mu.Unlock()
 
 	// the other sees it, and joins
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf", seat("222")))
-	body := w.Body.String()
-	if !strings.Contains(body, "opened by someone") || !strings.Contains(body, "1 in") || !strings.Contains(body, `name="room" value="lobby-1"`) || strings.Contains(body, "STOP") {
-		t.Fatalf("the other's page: %s", body)
+	st := state(t, h, "222")
+	if len(st.Rooms) != 1 || st.Rooms[0].Person != "someone" || st.Rooms[0].In != 1 || st.Rooms[0].Mine {
+		t.Fatalf("the other's rooms: %+v", st.Rooms)
 	}
-	form = seat("222")
-	form.Set("room", "lobby-1")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodPost, "/foyer/wolf/join", form))
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("join: %d %s", w.Code, w.Body.String())
+	code, ans = verb(h, "222", "join", "room", "lobby-1")
+	if code != http.StatusOK || !strings.Contains(ans.Notice, "Joining RetroDECK") {
+		t.Fatalf("join: %d %+v", code, ans)
 	}
 	f.mu.Lock()
 	in := f.lobbies[0]["connected_sessions"].([]string)
@@ -137,37 +184,33 @@ func TestOpenARoomJoinItStopIt(t *testing.T) {
 		t.Fatalf("in the room: %v", in)
 	}
 	// joining twice is refused in words, not sent to the engine
-	w = httptest.NewRecorder()
-	r := fromSeat(http.MethodPost, "/foyer/wolf/join", form)
-	r.Header.Set("HX-Request", "true")
-	h.ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "in a room already") {
-		t.Fatalf("a second join: %s", w.Body.String())
+	code, ans = verb(h, "222", "join", "room", "lobby-1")
+	if code != http.StatusBadRequest || !strings.Contains(ans.Error, "in a room already") {
+		t.Fatalf("a second join: %d %+v", code, ans)
 	}
 
-	// the opener's page shows STOP; the other may not stop it; the opener may
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf", seat("111")))
-	if !strings.Contains(w.Body.String(), "STOP") || !strings.Contains(w.Body.String(), "JOIN YOUR ROOM") {
-		t.Fatalf("the opener's page: %s", w.Body.String())
+	// the opener's state shows the room as theirs, on the house shelf too
+	st = state(t, h, "111")
+	if len(st.Rooms) != 1 || !st.Rooms[0].Mine {
+		t.Fatalf("the opener's rooms: %+v", st.Rooms)
 	}
-	form = seat("222")
-	form.Set("room", "lobby-1")
-	w = httptest.NewRecorder()
-	r = fromSeat(http.MethodPost, "/foyer/wolf/stop", form)
-	r.Header.Set("HX-Request", "true")
-	h.ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "who opened it") {
-		t.Fatalf("the other stopped it: %s", w.Body.String())
+	var retroShelf string
+	for _, x := range st.House {
+		if x.ID == retro {
+			retroShelf = x.Room
+		}
 	}
-	form = seat("111")
-	form.Set("room", "lobby-1")
-	w = httptest.NewRecorder()
-	r = fromSeat(http.MethodPost, "/foyer/wolf/stop", form)
-	r.Header.Set("HX-Request", "true")
-	h.ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "Room closed") {
-		t.Fatalf("the opener could not stop it: %s", w.Body.String())
+	if retroShelf != "lobby-1" {
+		t.Fatalf("the house shelf does not point at the opener's room: %+v", st.House)
+	}
+	// the other may not stop it; the opener may
+	code, ans = verb(h, "222", "stop", "room", "lobby-1")
+	if code != http.StatusBadRequest || !strings.Contains(ans.Error, "who opened it") {
+		t.Fatalf("the other stopped it: %d %+v", code, ans)
+	}
+	code, ans = verb(h, "111", "stop", "room", "lobby-1")
+	if code != http.StatusOK || !strings.Contains(ans.Notice, "Room closed") {
+		t.Fatalf("the opener could not stop it: %d %+v", code, ans)
 	}
 	f.mu.Lock()
 	n := len(f.lobbies)
@@ -176,7 +219,7 @@ func TestOpenARoomJoinItStopIt(t *testing.T) {
 		t.Fatalf("%d rooms left", n)
 	}
 	// the metrics counted it all
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	m := w.Body.String()
 	for _, want := range []string{`dejarik_rooms_opened_total{project="wolf"} 1`, `dejarik_room_joins_total{project="wolf"} 2`, `dejarik_room_refusals_total{project="wolf"} 1`, `dejarik_room_stops_total{project="wolf"} 1`, `dejarik_rooms_open{project="wolf"} 0`} {
@@ -193,19 +236,19 @@ func TestARoomNeedsTheSeatsCapsAndAFreeHome(t *testing.T) {
 	f.mu.Unlock()
 
 	// RetroDECK is open for someone as a tile on another device: no room on it
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf", seat("111")))
-	if !strings.Contains(w.Body.String(), "already open for someone on 203.0.113.35 as a tile") {
-		t.Fatalf("the busy home is not said: %s", w.Body.String())
+	st := state(t, h, "111")
+	var busy string
+	for _, x := range st.House {
+		if x.ID == retro {
+			busy = x.Busy
+		}
 	}
-	form := seat("111")
-	form.Set("app", retro)
-	w = httptest.NewRecorder()
-	r := fromSeat(http.MethodPost, "/foyer/wolf/open", form)
-	r.Header.Set("HX-Request", "true")
-	h.ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "quit it there") {
-		t.Fatalf("the open was not refused: %s", w.Body.String())
+	if !strings.Contains(busy, "already open for someone on 203.0.113.35 as a tile") {
+		t.Fatalf("the busy home is not said: %+v", st.House)
+	}
+	code, ans := verb(h, "111", "open", "app", retro)
+	if code != http.StatusBadRequest || !strings.Contains(ans.Error, "quit it there") {
+		t.Fatalf("the open was not refused: %d %+v", code, ans)
 	}
 	f.mu.Lock()
 	created := len(f.created)
@@ -214,13 +257,10 @@ func TestARoomNeedsTheSeatsCapsAndAFreeHome(t *testing.T) {
 		t.Fatal("a room was opened on a home in use")
 	}
 	// Steam is free — but a seat with no caps would make a room that shows nothing
-	form = url.Values{"session": {"111"}, "app": {"178625061"}}
-	w = httptest.NewRecorder()
-	r = fromSeat(http.MethodPost, "/foyer/wolf/open", form)
-	r.Header.Set("HX-Request", "true")
-	h.ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "video caps") {
-		t.Fatalf("no caps, no refusal: %s", w.Body.String())
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, fromSeat(http.MethodPost, "/foyer/wolf/open", url.Values{"session": {"111"}, "app": {"178625061"}}))
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "video caps") {
+		t.Fatalf("no caps, no refusal: %d %s", w.Code, w.Body.String())
 	}
 }
 
@@ -250,14 +290,14 @@ func TestTheHubIsExemptFromTheGuard(t *testing.T) {
 	}
 	// but two RetroDECKs on one drawer are still a clash
 	f.mu.Lock()
-	f.sessions = append(f.sessions, session("113", retro, "203.0.113.32", 3001), session("114", retro, "203.0.113.33", 3001))
+	f.sessions = append(f.sessions, session("113", retro, "203.0.113.32", 3001))
 	f.mu.Unlock()
 	tick(now.Add(20 * time.Second))
 	read()
-	tick(now.Add(30 * time.Second))
 	f.mu.Lock()
-	f.sessions = append(f.sessions[:3], session("115", retro, "203.0.113.34", 3001))
+	f.sessions = append(f.sessions, session("115", retro, "203.0.113.34", 3001))
 	f.mu.Unlock()
+	tick(now.Add(30 * time.Second))
 	read()
 	f.mu.Lock()
 	stops = len(f.stops)
@@ -268,24 +308,19 @@ func TestTheHubIsExemptFromTheGuard(t *testing.T) {
 }
 
 func TestALockedRoomAsksItsPIN(t *testing.T) {
-	h, f, _, _ := wolfServer(t)
+	h, f, _, tick := wolfServer(t)
 	f.mu.Lock()
 	f.sessions = []map[string]any{session("111", hub, "203.0.113.30", 3001), session("222", hub, "203.0.113.31", 3002)}
 	f.mu.Unlock()
 
-	form := seat("111")
-	form.Set("app", retro)
-	form.Set("pin", "12")
-	w := httptest.NewRecorder()
-	r := fromSeat(http.MethodPost, "/foyer/wolf/open", form)
-	r.Header.Set("HX-Request", "true")
-	h.ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "four digits") {
-		t.Fatalf("a two-digit PIN: %s", w.Body.String())
+	code, ans := verb(h, "111", "open", "app", retro, "pin", "12")
+	if code != http.StatusBadRequest || !strings.Contains(ans.Error, "four digits") {
+		t.Fatalf("a two-digit PIN: %d %+v", code, ans)
 	}
-	form.Set("pin", "4321")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodPost, "/foyer/wolf/open", form))
+	code, _ = verb(h, "111", "open", "app", retro, "pin", "4321")
+	if code != http.StatusOK {
+		t.Fatalf("open locked: %d", code)
+	}
 	f.mu.Lock()
 	if len(f.created) != 1 || f.created[0]["pin"] == nil {
 		t.Fatalf("the room is not locked: %v", f.created)
@@ -293,40 +328,38 @@ func TestALockedRoomAsksItsPIN(t *testing.T) {
 	f.mu.Unlock()
 
 	// the other: no PIN, wrong PIN, right PIN
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf", seat("222")))
-	if !strings.Contains(w.Body.String(), "locked") || !strings.Contains(w.Body.String(), "data-wheel") {
-		t.Fatalf("the other's page has no wheels: %s", w.Body.String())
+	st := state(t, h, "222")
+	if len(st.Rooms) != 1 || !st.Rooms[0].Locked {
+		t.Fatalf("the other's rooms: %+v", st.Rooms)
 	}
-	join := seat("222")
-	join.Set("room", "lobby-1")
-	w = httptest.NewRecorder()
-	r = fromSeat(http.MethodPost, "/foyer/wolf/join", join)
-	r.Header.Set("HX-Request", "true")
-	h.ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "four digits") {
-		t.Fatalf("no PIN: %s", w.Body.String())
+	code, ans = verb(h, "222", "join", "room", "lobby-1")
+	if code != http.StatusBadRequest || !strings.Contains(ans.Error, "four digits") {
+		t.Fatalf("no PIN: %d %+v", code, ans)
 	}
-	join.Set("pin", "0000")
-	w = httptest.NewRecorder()
-	r = fromSeat(http.MethodPost, "/foyer/wolf/join", join)
-	r.Header.Set("HX-Request", "true")
-	h.ServeHTTP(w, r)
-	if !strings.Contains(w.Body.String(), "wrong PIN") {
-		t.Fatalf("a wrong PIN: %s", w.Body.String())
+	code, ans = verb(h, "222", "join", "room", "lobby-1", "pin", "0000")
+	if code != http.StatusBadRequest || !strings.Contains(ans.Error, "wrong PIN") {
+		t.Fatalf("a wrong PIN: %d %+v", code, ans)
 	}
-	join.Set("pin", "4321")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, fromSeat(http.MethodPost, "/foyer/wolf/join", join))
+	code, _ = verb(h, "222", "join", "room", "lobby-1", "pin", "4321")
+	if code != http.StatusOK {
+		t.Fatalf("the right PIN: %d", code)
+	}
 	f.mu.Lock()
 	in := f.lobbies[0]["connected_sessions"].([]string)
+	f.lobbies[0]["connected_sessions"] = []string{"222"} // the opener left
 	f.mu.Unlock()
 	if len(in) != 2 {
 		t.Fatalf("the right PIN did not open the door: %v", in)
 	}
+	// the opener comes back to their own locked room: no wheels, the panel remembers
+	tick(time.Date(2026, 1, 1, 20, 0, 5, 0, time.UTC)) // past the panel's 2 s cache: the engine's list is read again
+	code, ans = verb(h, "111", "join", "room", "lobby-1")
+	if code != http.StatusOK {
+		t.Fatalf("the opener back in: %d %+v", code, ans)
+	}
 
 	// an admin on the panel closes it without the PIN: this program remembers it
-	w = post(h, "/api/projects/wolf/rooms/lobby-1/stop", "", "boss", "admins")
+	w := post(h, "/api/projects/wolf/rooms/lobby-1/stop", "", "boss", "admins")
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("admin stop: %d %s", w.Code, w.Body.String())
 	}
@@ -356,7 +389,6 @@ func TestRoomsOnTheAPIAndThePanel(t *testing.T) {
 	if len(out.Rooms) != 1 || out.Rooms[0].Person != "other" || out.Rooms[0].In != 2 || out.Rooms[0].Mine {
 		t.Fatalf("rooms: %s", r.Body.String())
 	}
-	// not yours to stop; yours as the opener; anyone's as an admin
 	w := post(h, "/api/projects/wolf/rooms/L1/stop", "", "someone", "players")
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("someone stopped other's room: %d", w.Code)
@@ -365,7 +397,6 @@ func TestRoomsOnTheAPIAndThePanel(t *testing.T) {
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("the opener could not stop it: %d %s", w.Code, w.Body.String())
 	}
-	// the panel lists rooms
 	f.mu.Lock()
 	f.lobbies = []map[string]any{{"id": "L2", "name": "Steam", "multi_user": true, "started_by_profile_id": "salon", "pin_required": true, "stop_when_everyone_leaves": false, "connected_sessions": []string{"a"}}}
 	f.mu.Unlock()
@@ -373,5 +404,39 @@ func TestRoomsOnTheAPIAndThePanel(t *testing.T) {
 	h.ServeHTTP(r, as(httptest.NewRequest(http.MethodGet, "/panel/wolf", nil), "boss", "admins"))
 	if !strings.Contains(r.Body.String(), "opened by le salon") || !strings.Contains(r.Body.String(), "locked") || !strings.Contains(r.Body.String(), "/room-stop/wolf") {
 		t.Fatalf("the panel: %s", r.Body.String())
+	}
+}
+
+func TestArtworkIsFetchedOnceAndKept(t *testing.T) {
+	h, f, _, _ := wolfServer(t)
+	f.mu.Lock()
+	f.sessions = []map[string]any{session("111", hub, "203.0.113.30", 3001)}
+	f.mu.Unlock()
+	hits := 0
+	art := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("PNG!"))
+	}))
+	defer art.Close()
+	f.mu.Lock()
+	f.iconURL = art.URL + "/retrodeck.png"
+	f.mu.Unlock()
+	_ = state(t, h, "111") // reads the apps
+	for i := 0; i < 3; i++ {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf/icon/"+retro, seat("111")))
+		if w.Code != http.StatusOK || w.Body.String() != "PNG!" || w.Header().Get("Content-Type") != "image/png" {
+			t.Fatalf("icon: %d %s", w.Code, w.Body.String())
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("the artwork was fetched %d times", hits)
+	}
+	// a game with no artwork
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, fromSeat(http.MethodGet, "/foyer/wolf/icon/178625061", seat("111")))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("no artwork: %d", w.Code)
 	}
 }

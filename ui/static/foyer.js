@@ -1,197 +1,242 @@
-/* Le Foyer — a pad drives the page.
-   Everything actionable is a [data-nav] element with a data-key; the focus
-   ring is the cursor. The D-pad / left stick (or the arrow keys) move it to
-   the nearest element in that direction, A (or Enter) presses, B (or
-   Escape) backs out of a PIN. A PIN is four wheels: up/down turn a digit,
-   digits typed set one. After every htmx swap the cursor goes back to the
-   element with the same key, and a PIN block that was open is re-opened.
-   Mouse and touch keep working on their own. */
+/* Le Foyer — the page's own state, the server's data, one render.
+
+   DATA is what /state answers every few seconds: who you are, the rooms,
+   the house. UI is what only this page knows: which card the ring is on, a
+   PIN being turned. A poll replaces data and renders; it never touches ui —
+   which is why the digits you are turning survive it (0.4 re-rendered the
+   whole page from the server and wiped them).
+
+   A pad drives it: ◀ ▶ walk a shelf, ▲ ▼ change shelves, A presses the
+   card's first action, X its second, Y its third, B backs out. In PIN mode
+   ◀ ▶ move between the four wheels, ▲ ▼ turn one, A confirms, B cancels.
+   Arrow keys, Enter, x, y, Escape, the digits, a mouse and a finger do the
+   same. */
 (function () {
   'use strict';
-  var openLock = null;          // data-key of the OPEN form whose PIN block is open
-  var lastKey = null;           // data-key of the focused element
+  var body = document.body;
+  var P = body.dataset.project, SESSION = body.dataset.session, CAPS = body.dataset.caps || '';
+  var Q = '?session=' + encodeURIComponent(SESSION) + '&caps=' + encodeURIComponent(CAPS);
+  var data = null;
+  var ui = { focus: null, pin: null, msg: null, busy: false };
 
-  function navs() {
-    return Array.prototype.filter.call(document.querySelectorAll('[data-nav]'), function (el) {
-      return el.offsetParent !== null && !el.disabled;
+  // --- the server's data ---------------------------------------------------
+  function poll() {
+    fetch('/foyer/' + P + '/state' + Q, { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) { data = d; render(); } })
+      .catch(function () {})
+      .then(function () { window.setTimeout(poll, ((data && data.poll_seconds) || 3) * 1000); });
+  }
+  function act(verb, target, pin) {
+    if (ui.busy) return;
+    ui.busy = true;
+    var form = new URLSearchParams({ session: SESSION, caps: CAPS });
+    form.set(verb === 'open' ? 'app' : 'room', target);
+    if (pin) form.set('pin', pin);
+    fetch('/foyer/' + P + '/' + verb, { method: 'POST', body: form,
+      headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (x.ok) { data = x.j; ui.msg = x.j.notice ? { kind: 'good', text: x.j.notice } : null; ui.pin = null; }
+        else {
+          if (x.j.state) data = x.j.state;
+          ui.msg = { kind: 'bad', text: x.j.error || 'refused' };
+          // a locked room, or one whose PIN the panel no longer remembers: the wheels
+          if (/four digits/i.test(x.j.error || '')) ui.pin = { card: ui.focus, verb: verb, target: target, digits: [0, 0, 0, 0], idx: 0 };
+          else ui.pin = null;
+        }
+      })
+      .catch(function () { ui.msg = { kind: 'bad', text: 'the panel did not answer' }; })
+      .then(function () { ui.busy = false; render(); });
+  }
+
+  // --- the cards, from data -----------------------------------------------
+  function cards() {
+    var out = [];
+    if (!data) return out;
+    var known = data.known, me = data.guest && data.guest.person;
+    (data.rooms || []).forEach(function (r) {
+      var acts = [];
+      if (known) {
+        acts.push({ glyph: 'A', label: r.mine ? 'join your room' : 'join', verb: 'join', target: r.id, pin: r.locked && !r.mine });
+        if (r.mine) acts.push({ glyph: 'Y', label: 'stop', verb: 'stop', target: r.id });
+      }
+      out.push({ key: 'room:' + r.id, shelf: 'rooms', title: r.app, icon: r.app_id,
+        sub: 'opened by <b>' + esc(r.label || r.person || '?') + '</b>' + (r.mine ? ' · yours' : '') + ' · since ' + hhmm(r.since),
+        players: [r.in, Math.max(4, r.in)], locked: r.locked, acts: acts });
     });
-  }
-  function focused() {
-    var el = document.activeElement;
-    return el && el.hasAttribute && el.hasAttribute('data-nav') ? el : null;
-  }
-  function focus(el) {
-    if (!el) return;
-    el.focus({ preventScroll: false });
-    lastKey = el.getAttribute('data-key');
-  }
-  function center(r) { return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
-
-  // the nearest element in a direction: on-axis distance, with a penalty
-  // for being off-axis, so a pad walks the page the way an eye does
-  function move(dir) {
-    var cur = focused();
-    var list = navs();
-    if (!cur) { focus(list[0]); return; }
-    var a = center(cur.getBoundingClientRect());
-    var best = null, bestScore = Infinity;
-    list.forEach(function (el) {
-      if (el === cur) return;
-      var b = center(el.getBoundingClientRect());
-      var dx = b.x - a.x, dy = b.y - a.y, on, off;
-      if (dir === 'left') { on = -dx; off = Math.abs(dy); }
-      else if (dir === 'right') { on = dx; off = Math.abs(dy); }
-      else if (dir === 'up') { on = -dy; off = Math.abs(dx); }
-      else { on = dy; off = Math.abs(dx); }
-      if (on <= 4) return;
-      var score = on + off * (dir === 'up' || dir === 'down' ? 0.6 : 2.5);
-      if (score < bestScore) { bestScore = score; best = el; }
+    (data.house_shelf || []).forEach(function (h) {
+      var acts = [], sub, busy = false;
+      if (!known) { sub = 'a device nobody pointed yet — an admin points it at a drawer on the panel'; busy = true; }
+      else if (h.room) { sub = 'your room is open on it'; acts.push({ glyph: 'A', label: 'join your room', verb: 'join', target: h.room }); }
+      else if (h.busy) { sub = esc(h.busy); busy = true; }
+      else {
+        sub = (data.guest.shared ? "the house's home" : 'your home') + ' · your saves';
+        acts.push({ glyph: 'A', label: 'open a room', verb: 'open', target: h.id });
+        acts.push({ glyph: 'X', label: 'lock with a PIN', verb: 'open', target: h.id, pin: true });
+      }
+      out.push({ key: 'house:' + h.id, shelf: 'house', title: h.title, icon: h.icon ? h.id : '', sub: sub, acts: acts, busy: busy });
     });
-    if (best) focus(best);
+    return out;
   }
+  function current() {
+    var list = cards();
+    for (var i = 0; i < list.length; i++) if (list[i].key === ui.focus) return list[i];
+    return null;
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function hhmm(iso) { var d = new Date(iso); return isNaN(d) ? '' : (('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2)); }
 
-  // --- the wheels ---------------------------------------------------------
-  function turn(wheel, delta) {
-    var b = wheel.querySelector('b');
-    var v = (parseInt(b.textContent, 10) + delta + 10) % 10;
-    b.textContent = String(v);
-    writePin(wheel.closest('form'));
-  }
-  function setDigit(wheel, d) {
-    wheel.querySelector('b').textContent = String(d);
-    writePin(wheel.closest('form'));
-    var next = wheel.nextElementSibling;
-    if (next && next.hasAttribute('data-wheel')) focus(next);
-  }
-  function writePin(form) {
-    if (!form) return;
-    var pin = form.querySelector('input[name=pin]');
-    var wheels = form.querySelector('[data-wheels]');
-    if (!pin || !wheels || wheels.offsetParent === null) { if (pin) pin.value = ''; return; }
-    pin.value = Array.prototype.map.call(wheels.querySelectorAll('[data-wheel] b'), function (b) { return b.textContent; }).join('');
-  }
-  function showLock(form, on) {
-    var block = form.querySelector('[data-locked]');
-    if (!block) return;
-    block.classList.toggle('hidden', !on);
-    var plain = form.querySelector('[data-key^="open:"]');
-    var lock = form.querySelector('[data-lock]');
-    if (plain) plain.classList.toggle('hidden', on);
-    if (lock) lock.classList.toggle('hidden', on);
-    openLock = on ? form.querySelector('[data-lock]').getAttribute('data-key') : null;
-    writePin(form);
-    if (on) focus(block.querySelector('[data-wheel]'));
-    else focus(plain);
-  }
-  function back() {
-    var cur = focused();
-    var form = cur && cur.closest('form[data-lockable]');
-    if (form && !form.querySelector('[data-locked]').classList.contains('hidden')) { showLock(form, false); return true; }
-    return false;
+  // --- render ------------------------------------------------------------------
+  function render() {
+    var list = cards();
+    if (!list.some(function (c) { return c.key === ui.focus; })) ui.focus = list.length ? list[0].key : null;
+    if (ui.pin && ui.pin.card !== ui.focus) ui.pin = null;
+    var who = document.getElementById('who');
+    if (data && who) {
+      var g = data.guest;
+      who.innerHTML = (data.known ? esc(g.label) + (g.shared ? " · the house's" : '') : "nobody's drawer") + ' <span class="dim">· ' + esc(g.device) + '</span>';
+    }
+    var msg = document.getElementById('msg');
+    msg.innerHTML = ui.msg ? '<div class="' + ui.msg.kind + '">' + esc(ui.msg.text) + '</div>' : '';
+    var n = document.getElementById('rooms-n');
+    if (data) { var inn = (data.rooms || []).reduce(function (a, r) { return a + r.in; }, 0); n.textContent = data.rooms.length ? (data.rooms.length + ' room' + (data.rooms.length > 1 ? 's' : '') + ' · ' + inn + ' in') : ''; }
+    ['rooms', 'house'].forEach(function (shelf) {
+      var el = document.getElementById(shelf), html = '';
+      var mine = list.filter(function (c) { return c.shelf === shelf; });
+      if (!mine.length) html = '<div class="empty">' + (shelf === 'rooms' ? 'none — open one below, and the others will find it here' : (data ? 'the house has no game on the shelf' : 'reading the house…')) + '</div>';
+      mine.forEach(function (c) {
+        var focus = c.key === ui.focus;
+        var pin = focus && ui.pin;
+        html += '<div class="card' + (focus ? ' focus' : '') + (c.busy ? ' busy' : '') + '" data-key="' + esc(c.key) + '">';
+        html += '<div class="top"><span class="art">' + (c.icon ? '<img src="/foyer/' + P + '/icon/' + encodeURIComponent(c.icon) + Q + '" alt="">' : esc(c.title.slice(0, 1))) + '</span>';
+        html += '<span class="name">' + esc(c.title) + '</span>' + (c.locked ? '<span class="lock">PIN</span>' : '') + '</div>';
+        html += '<div class="sub">' + (pin ? (ui.pin.verb === 'open' ? 'lock with a PIN — turn the wheels' : 'its four digits, please') : c.sub) + '</div>';
+        if (c.players && !pin) { html += '<div class="players">'; for (var i = 0; i < c.players[1]; i++) html += '<i' + (i < c.players[0] ? '' : ' class="off"') + '></i>'; html += ' ' + c.players[0] + ' in</div>'; }
+        if (pin) {
+          html += '<div class="pinrow"><span class="wheels">';
+          ui.pin.digits.forEach(function (d, i) { html += '<span class="wheel' + (i === ui.pin.idx ? ' on' : '') + '" data-wheel="' + i + '"><b>' + d + '</b></span>'; });
+          html += '</span></div>';
+          html += '<div class="acts"><span class="key" data-glyph="A"><b>A</b>' + (ui.pin.verb === 'open' ? 'open locked' : ui.pin.verb) + '</span><span class="key dim" data-glyph="B"><b>B</b>cancel</span></div>';
+        } else {
+          html += '<div class="acts">';
+          c.acts.forEach(function (a) { html += '<span class="key' + (a.glyph === 'Y' ? ' dim' : '') + '" data-glyph="' + a.glyph + '"><b>' + a.glyph + '</b>' + esc(a.label) + '</span>'; });
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+      el.innerHTML = html;
+    });
+    var f = document.querySelector('.card.focus');
+    if (f && f.scrollIntoView) f.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   // --- presses --------------------------------------------------------------
-  function press() {
-    var cur = focused();
-    if (!cur) { focus(navs()[0]); return; }
-    if (cur.hasAttribute('data-wheel')) { move('right'); return; }
-    cur.click();
-  }
-  document.addEventListener('click', function (e) {
-    var lock = e.target.closest('[data-lock]');
-    if (lock) { e.preventDefault(); showLock(lock.closest('form'), true); return; }
-    var w = e.target.closest('[data-wheel]');
-    if (w) {
-      var r = w.getBoundingClientRect();
-      turn(w, (e.clientY - r.top) < r.height / 2 ? 1 : -1);
-      focus(w);
+  function press(glyph) {
+    var c = current();
+    if (ui.pin) {
+      if (glyph === 'A') act(ui.pin.verb, ui.pin.target, ui.pin.digits.join(''));
+      else if (glyph === 'B') { ui.pin = null; render(); }
+      return;
     }
-  });
-  document.addEventListener('submit', function (e) { writePin(e.target); }, true);
-  document.body.addEventListener('htmx:configRequest', function (e) {
-    var form = e.detail.elt;
-    if (form && form.tagName === 'FORM') { writePin(form); var pin = form.querySelector('input[name=pin]'); if (pin) e.detail.parameters.pin = pin.value; }
+    if (glyph === 'B') { ui.msg = null; render(); return; }
+    if (!c) return;
+    var a = null;
+    for (var i = 0; i < c.acts.length; i++) if (c.acts[i].glyph === glyph) a = c.acts[i];
+    if (!a) return;
+    if (a.pin) { ui.pin = { card: c.key, verb: a.verb, target: a.target, digits: [0, 0, 0, 0], idx: 0 }; ui.msg = null; render(); return; }
+    act(a.verb, a.target);
+  }
+  function move(dir) {
+    if (ui.pin) {
+      var p = ui.pin;
+      if (dir === 'left') p.idx = (p.idx + 3) % 4;
+      else if (dir === 'right') p.idx = (p.idx + 1) % 4;
+      else if (dir === 'up') p.digits[p.idx] = (p.digits[p.idx] + 1) % 10;
+      else if (dir === 'down') p.digits[p.idx] = (p.digits[p.idx] + 9) % 10;
+      render(); return;
+    }
+    var list = cards();
+    if (!list.length) return;
+    var c = current() || list[0];
+    var same = list.filter(function (x) { return x.shelf === c.shelf; });
+    var i = same.indexOf(c);
+    if (dir === 'left' && i > 0) ui.focus = same[i - 1].key;
+    else if (dir === 'right' && i < same.length - 1) ui.focus = same[i + 1].key;
+    else if (dir === 'up' || dir === 'down') {
+      var other = list.filter(function (x) { return x.shelf !== c.shelf; });
+      if (other.length) ui.focus = other[Math.min(i, other.length - 1)].key;
+    }
+    render();
+  }
+  function digit(d) {
+    if (!ui.pin) return;
+    ui.pin.digits[ui.pin.idx] = d;
+    ui.pin.idx = Math.min(3, ui.pin.idx + 1);
+    render();
+  }
+
+  // mouse and touch: the card, its keys, the wheels
+  document.addEventListener('click', function (e) {
+    var card = e.target.closest('.card');
+    if (!card) return;
+    if (card.dataset.key !== ui.focus) { ui.focus = card.dataset.key; if (ui.pin) ui.pin = null; }
+    var w = e.target.closest('[data-wheel]');
+    if (w && ui.pin) {
+      var r = w.getBoundingClientRect(); ui.pin.idx = parseInt(w.dataset.wheel, 10);
+      ui.pin.digits[ui.pin.idx] = (ui.pin.digits[ui.pin.idx] + ((e.clientY - r.top) < r.height / 2 ? 1 : 9)) % 10;
+      render(); return;
+    }
+    var k = e.target.closest('[data-glyph]');
+    if (k) { render(); press(k.dataset.glyph); return; }
+    render();
   });
 
   document.addEventListener('keydown', function (e) {
-    var cur = focused();
-    var onWheel = cur && cur.hasAttribute('data-wheel');
     switch (e.key) {
-      case 'ArrowUp': if (onWheel) turn(cur, 1); else move('up'); break;
-      case 'ArrowDown': if (onWheel) turn(cur, -1); else move('down'); break;
+      case 'ArrowUp': move('up'); break;
+      case 'ArrowDown': move('down'); break;
       case 'ArrowLeft': move('left'); break;
       case 'ArrowRight': move('right'); break;
-      case 'Enter': case ' ': if (cur && cur.hasAttribute('data-wheel')) { move('right'); } else return; break;
-      case 'Escape': case 'Backspace': if (!back()) return; break;
+      case 'Enter': case ' ': press('A'); break;
+      case 'x': case 'X': press('X'); break;
+      case 'y': case 'Y': press('Y'); break;
+      case 'Escape': case 'Backspace': press('B'); break;
       default:
-        if (onWheel && /^[0-9]$/.test(e.key)) { setDigit(cur, parseInt(e.key, 10)); break; }
+        if (/^[0-9]$/.test(e.key) && ui.pin) { digit(parseInt(e.key, 10)); break; }
         return;
     }
     e.preventDefault();
   });
 
   // --- the pad ----------------------------------------------------------------
-  // Standard mapping: 0 A, 1 B, 12 up, 13 down, 14 left, 15 right; axes 0/1
-  // the left stick. Held directions repeat after a pause.
+  // Standard mapping: 0 A, 1 B, 2 X, 3 Y, 12 up, 13 down, 14 left, 15 right;
+  // axes 0/1 the left stick. Held directions repeat after a pause.
   var held = {}, repeatAt = {};
   function padState(gp) {
-    var s = {};
-    var b = gp.buttons, ax = gp.axes;
-    s.a = b[0] && b[0].pressed; s.b = b[1] && b[1].pressed;
-    s.up = (b[12] && b[12].pressed) || ax[1] < -0.5;
-    s.down = (b[13] && b[13].pressed) || ax[1] > 0.5;
-    s.left = (b[14] && b[14].pressed) || ax[0] < -0.5;
-    s.right = (b[15] && b[15].pressed) || ax[0] > 0.5;
+    var b = gp.buttons, ax = gp.axes, s = {};
+    s.A = b[0] && b[0].pressed; s.B = b[1] && b[1].pressed; s.X = b[2] && b[2].pressed; s.Y = b[3] && b[3].pressed;
+    s.up = (b[12] && b[12].pressed) || ax[1] < -0.5; s.down = (b[13] && b[13].pressed) || ax[1] > 0.5;
+    s.left = (b[14] && b[14].pressed) || ax[0] < -0.5; s.right = (b[15] && b[15].pressed) || ax[0] > 0.5;
     return s;
   }
-  function act(name) {
-    var cur = focused();
-    var onWheel = cur && cur.hasAttribute('data-wheel');
-    if (name === 'a') press();
-    else if (name === 'b') back();
-    else if (name === 'up' && onWheel) turn(cur, 1);
-    else if (name === 'down' && onWheel) turn(cur, -1);
-    else move(name);
-  }
-  function poll(t) {
+  function tick(t) {
     var pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (var i = 0; i < pads.length; i++) {
-      var gp = pads[i];
-      if (!gp) continue;
+      var gp = pads[i]; if (!gp) continue;
       var s = padState(gp);
-      ['a', 'b', 'up', 'down', 'left', 'right'].forEach(function (k) {
-        var id = i + ':' + k;
+      ['A', 'B', 'X', 'Y', 'up', 'down', 'left', 'right'].forEach(function (k) {
+        var id = i + ':' + k, isDir = k.length > 1;
         if (s[k]) {
-          if (!held[id]) { held[id] = true; repeatAt[id] = t + 320; act(k); }
-          else if ((k !== 'a' && k !== 'b') && t >= repeatAt[id]) { repeatAt[id] = t + 130; act(k); }
-        } else { held[id] = false; }
+          if (!held[id]) { held[id] = true; repeatAt[id] = t + 320; isDir ? move(k) : press(k); }
+          else if (isDir && t >= repeatAt[id]) { repeatAt[id] = t + 140; move(k); }
+        } else held[id] = false;
       });
     }
-    window.requestAnimationFrame(poll);
+    window.requestAnimationFrame(tick);
   }
-  window.addEventListener('gamepadconnected', function () { document.body.classList.add('pad'); });
-  window.requestAnimationFrame(poll);
+  window.requestAnimationFrame(tick);
 
-  // --- after a swap: the cursor goes back where it was --------------------
-  function restore() {
-    if (openLock) {
-      var lock = document.querySelector('[data-key="' + openLock + '"]');
-      if (lock) { var f = lock.closest('form'); showLock(f, true); }
-      else openLock = null;
-    }
-    var el = lastKey && document.querySelector('[data-key="' + lastKey + '"]');
-    if (el && el.offsetParent !== null) focus(el); else if (!focused()) focus(navs()[0]);
-  }
-  document.body.addEventListener('htmx:afterSwap', function () { window.setTimeout(restore, 0); });
-  document.body.addEventListener('htmx:afterSettle', function () { if (!focused()) restore(); });
-  document.addEventListener('focusin', function (e) { var el = e.target.closest && e.target.closest('[data-nav]'); if (el) lastKey = el.getAttribute('data-key'); });
-
-  // a page with an open PIN block must not be swapped from under the wheels:
-  // hold the poll while one is open
-  document.body.addEventListener('htmx:beforeRequest', function (e) {
-    if (openLock && e.detail.elt && e.detail.elt.id === 'foyer') e.preventDefault();
-  });
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { focus(navs()[0]); });
-  else focus(navs()[0]);
+  render();
+  poll();
 })();

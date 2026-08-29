@@ -75,7 +75,8 @@ func (s *Server) Handler() http.Handler {
 	// Le Foyer: the page in the stream (foyer.go) — its own identity, no
 	// proxy in front
 	mux.HandleFunc("GET /foyer/{name}", s.foyerPage)
-	mux.HandleFunc("GET /foyer/{name}/panel", s.foyerPanel)
+	mux.HandleFunc("GET /foyer/{name}/state", s.foyerStateHandler)
+	mux.HandleFunc("GET /foyer/{name}/icon/{app}", s.foyerIcon)
 	mux.HandleFunc("POST /foyer/{name}/open", s.foyerOpen)
 	mux.HandleFunc("POST /foyer/{name}/join", s.foyerJoin)
 	mux.HandleFunc("POST /foyer/{name}/stop", s.foyerStop)

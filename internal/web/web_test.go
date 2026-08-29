@@ -200,6 +200,8 @@ type fakeWolf struct {
 	lobbies []map[string]any
 	joined  []map[string]any
 	stopped []map[string]any
+	// RetroDECK's artwork URL (a test server's, when a test sets one)
+	iconURL string
 }
 
 func (f *fakeWolf) handler() http.Handler {
@@ -287,12 +289,18 @@ func (f *fakeWolf) handler() http.Handler {
 		ok(w, map[string]any{"success": true})
 	})
 	mux.HandleFunc("GET /api/v1/apps", func(w http.ResponseWriter, _ *http.Request) {
+		f.mu.Lock()
+		iconURL := f.iconURL
+		f.mu.Unlock()
+		if iconURL == "" {
+			iconURL = "https://example.com/retrodeck.png"
+		}
 		runner := func(name string) map[string]any {
 			return map[string]any{"type": "docker", "name": name, "image": "ghcr.io/example/" + name + ":1", "mounts": []string{}, "env": []string{"RUN_SWAY=true"}, "devices": []string{}, "ports": []string{}, "base_create_json": "{}"}
 		}
 		ok(w, map[string]any{"success": true, "apps": []map[string]any{
 			{"id": "178625061", "title": "Steam", "render_node": "/dev/dri/renderD128", "runner": runner("steam")},
-			{"id": "261696729", "title": "RetroDECK", "render_node": "/dev/dri/renderD128", "icon_png_path": "https://example.com/retrodeck.png", "runner": runner("borne")},
+			{"id": "261696729", "title": "RetroDECK", "render_node": "/dev/dri/renderD128", "icon_png_path": iconURL, "runner": runner("borne")},
 			{"id": "900000001", "title": "Le Foyer", "render_node": "/dev/dri/renderD128", "runner": runner("foyer")},
 		}})
 	})

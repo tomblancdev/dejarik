@@ -23,7 +23,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -463,7 +465,14 @@ func (s *Service) JoinRoom(ctx context.Context, name string, g Guest, roomID str
 	}
 	s.mu.Unlock()
 	if room.Locked && len(pin) != 4 {
-		return Room{}, fmt.Errorf("this room is locked — its four digits, please")
+		s.mu.Lock()
+		remembered := s.pins[roomID]
+		s.mu.Unlock()
+		if remembered != nil && room.Person == g.Person {
+			pin = remembered // the opener, back in their own room: no wheels
+		} else {
+			return Room{}, fmt.Errorf("this room is locked — its four digits, please")
+		}
 	}
 	if !room.Locked {
 		pin = nil
@@ -554,4 +563,62 @@ func (s *Service) stopRoom(ctx context.Context, name string, room Room, pin []in
 	s.log.Info("room closed", "project", name, "room", room.ID, "app", room.App, "person", room.Person, "in", room.In, "by", by)
 	s.st.Event("room-stop", by, name+"/"+room.App+" ("+or(room.Person, room.Label)+")")
 	return nil
+}
+
+// --- artwork ---------------------------------------------------------------
+
+type icon struct {
+	body  []byte
+	ctype string
+	at    time.Time
+	miss  bool
+}
+
+// Icon returns a house game's artwork, fetched from the URL the engine names
+// for it (a seat has no way out of the house; this program has) and kept
+// for a day. A miss is remembered for an hour, so an unreachable URL costs
+// one fetch, not one per card per poll.
+func (s *Service) Icon(ctx context.Context, name, appID string) ([]byte, string, bool) {
+	s.mu.Lock()
+	app, ok := s.apps[name][appID]
+	if s.icons == nil {
+		s.icons = map[string]icon{}
+	}
+	c, cached := s.icons[appID]
+	s.mu.Unlock()
+	if !ok || app.Icon == "" {
+		return nil, "", false
+	}
+	now := s.now()
+	if cached && ((c.miss && now.Sub(c.at) < time.Hour) || (!c.miss && now.Sub(c.at) < 24*time.Hour)) {
+		return c.body, c.ctype, !c.miss
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, app.Icon, nil)
+	if err != nil {
+		return nil, "", false
+	}
+	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil || res.StatusCode != http.StatusOK {
+		if res != nil {
+			res.Body.Close()
+		}
+		s.log.Warn("artwork unreachable", "project", name, "app", app.Title, "url", app.Icon, "err", err)
+		s.mu.Lock()
+		s.icons[appID] = icon{at: now, miss: true}
+		s.mu.Unlock()
+		return nil, "", false
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, 2<<20))
+	if err != nil {
+		return nil, "", false
+	}
+	ctype := res.Header.Get("Content-Type")
+	if ctype == "" {
+		ctype = "image/png"
+	}
+	s.mu.Lock()
+	s.icons[appID] = icon{body: body, ctype: ctype, at: now}
+	s.mu.Unlock()
+	return body, ctype, true
 }

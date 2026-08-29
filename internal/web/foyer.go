@@ -19,11 +19,18 @@ import (
 // the engine's live sessions) plus where the request comes from (the
 // appliance's own addresses). See arcade/foyer.go.
 //
-//	GET  /foyer/{name}?session=&caps=   the page
-//	GET  /foyer/{name}/panel            the polled block
+//	GET  /foyer/{name}?session=&caps=   the page: a shell, rendered by its script
+//	GET  /foyer/{name}/state            the state, as JSON — polled every few seconds
+//	GET  /foyer/{name}/icon/{app}       a house game's artwork, fetched once and kept
 //	POST /foyer/{name}/open   app, pin? the room is opened and the seat put in it
 //	POST /foyer/{name}/join   room, pin?
 //	POST /foyer/{name}/stop   room, pin?
+//
+// The page keeps its OWN state — which card the ring is on, the PIN being
+// turned — and renders the cards from the server's; a poll replaces data,
+// never the page (0.4's page re-rendered itself whole and wiped a PIN in
+// progress every few seconds). The verbs answer JSON when asked for it
+// (the page), a redirect to the page otherwise.
 //
 // `caps` is the seat's WOLF_VIDEO_BUFFER_CAPS, base64url from the seat's
 // start script (it holds spaces and parentheses), carried through every URL
@@ -38,6 +45,66 @@ type foyerVM struct {
 	Err, Notice, Words           string
 	Version                      string
 	PollSeconds                  int
+}
+
+// foyerState is what the page renders from.
+type foyerState struct {
+	Project     string          `json:"project"`
+	Label       string          `json:"label"`
+	Title       string          `json:"title"`
+	House       string          `json:"house"`
+	Version     string          `json:"version"`
+	Guest       arcade.Guest    `json:"guest"`
+	Known       bool            `json:"known"`
+	Rooms       []arcade.Room   `json:"rooms"`
+	HouseShelf  []arcade.Shelf  `json:"house_shelf"`
+	Notice      string          `json:"notice,omitempty"`
+	PollSeconds int             `json:"poll_seconds"`
+}
+
+func (s *Server) state(ctx context.Context, name string, g arcade.Guest, notice string) foyerState {
+	p := s.cfg.Projects[name]
+	st := foyerState{Project: name, Label: p.Label, Title: p.Foyer.Title, House: s.cfg.House, Version: s.version,
+		Guest: g, Known: g.Known(), Notice: notice, PollSeconds: 3, Rooms: []arcade.Room{}, HouseShelf: []arcade.Shelf{}}
+	if v, err := s.svc.Foyer(ctx, name, g); err == nil {
+		if v.Rooms != nil {
+			st.Rooms = v.Rooms
+		}
+		if v.House != nil {
+			st.HouseShelf = v.House
+		}
+	}
+	return st
+}
+
+func wantsJSON(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "application/json")
+}
+
+func (s *Server) foyerStateHandler(w http.ResponseWriter, r *http.Request) {
+	name, g, ok := s.guest(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, s.state(r.Context(), name, g, ""))
+}
+
+// foyerIcon serves a house game's artwork: the engine names a URL
+// (icon_png_path) the seat itself cannot reach — a seat has no way out of
+// the house — so the panel fetches it once and keeps it.
+func (s *Server) foyerIcon(w http.ResponseWriter, r *http.Request) {
+	name, _, ok := s.guest(w, r)
+	if !ok {
+		return
+	}
+	b, ctype, ok := s.svc.Icon(r.Context(), name, r.PathValue("app"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(b)
 }
 
 func remoteIP(r *http.Request) net.IP {
@@ -59,7 +126,8 @@ func (s *Server) guest(w http.ResponseWriter, r *http.Request) (string, arcade.G
 		http.NotFound(w, r)
 		return name, g, false
 	case errors.Is(err, arcade.ErrNotFromASeat):
-		s.log.Warn("foyer refused", "project", name, "from", r.RemoteAddr, "err", err)
+		// the lock doing its job — and the watcher knocks every minute
+		s.log.Debug("foyer refused", "project", name, "from", r.RemoteAddr, "err", err)
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return name, g, false
 	case err != nil:
@@ -126,22 +194,19 @@ func (s *Server) foyerPage(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "foyer", s.foyerData(r.Context(), name, g, r, "", ""))
 }
 
-func (s *Server) foyerPanel(w http.ResponseWriter, r *http.Request) {
-	name, g, ok := s.guest(w, r)
-	if !ok {
-		return
-	}
-	s.render(w, "foyer-panel", s.foyerData(r.Context(), name, g, r, "", ""))
-}
-
-// after answers a verb: the polled block for htmx, the page again otherwise.
+// after answers a verb: the state (or the refusal) as JSON for the page, a
+// redirect to the page otherwise.
 func (s *Server) foyerAfter(w http.ResponseWriter, r *http.Request, name string, g arcade.Guest, errMsg, notice string) {
-	if !htmx(r) {
+	if !wantsJSON(r) {
 		q := url.Values{"session": {g.Session}, "caps": {r.FormValue("caps")}}
 		http.Redirect(w, r, "/foyer/"+name+"?"+q.Encode(), http.StatusSeeOther)
 		return
 	}
-	s.render(w, "foyer-panel", s.foyerData(r.Context(), name, g, r, errMsg, notice))
+	if errMsg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": errMsg, "state": s.state(r.Context(), name, g, "")})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.state(r.Context(), name, g, notice))
 }
 
 func (s *Server) foyerOpen(w http.ResponseWriter, r *http.Request) {
