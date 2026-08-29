@@ -30,6 +30,7 @@
   function act(verb, target, pin) {
     if (ui.busy) return;
     ui.busy = true;
+    window.setTimeout(function () { ui.busy = false; }, 8000);
     var form = new URLSearchParams({ session: SESSION, caps: CAPS });
     form.set(verb === 'open' ? 'app' : 'room', target);
     if (pin) form.set('pin', pin);
@@ -120,7 +121,7 @@
           html += '<div class="acts"><span class="key" data-glyph="A"><b>A</b>' + (ui.pin.verb === 'open' ? 'open locked' : ui.pin.verb) + '</span><span class="key dim" data-glyph="B"><b>B</b>cancel</span></div>';
         } else {
           html += '<div class="acts">';
-          c.acts.forEach(function (a) { html += '<span class="key' + (a.glyph === 'Y' ? ' dim' : '') + '" data-glyph="' + a.glyph + '"><b>' + a.glyph + '</b>' + esc(a.label) + '</span>'; });
+          c.acts.forEach(function (a) { html += '<span class="key" data-glyph="' + a.glyph + '"><b>' + a.glyph + '</b>' + esc(a.label) + '</span>'; });
           html += '</div>';
         }
         html += '</div>';
@@ -224,10 +225,18 @@
     s.left = (b[14] && b[14].pressed) || ax[0] < -0.5; s.right = (b[15] && b[15].pressed) || ax[0] > 0.5;
     return s;
   }
+  var padLine = '', lastBtn = -1;
+  function readout(gp) {
+    var line = gp ? ((gp.id || 'pad').replace(/\s*\(.*$/, '').slice(0, 40) + ' · ' + (gp.mapping || 'raw mapping') + (lastBtn >= 0 ? ' · button ' + lastBtn : '')) : '';
+    if (line !== padLine) { padLine = line; var el = document.getElementById('pad'); if (el) el.textContent = line; }
+  }
   function tick(t) {
     var pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    var seen = null;
     for (var i = 0; i < pads.length; i++) {
       var gp = pads[i]; if (!gp) continue;
+      seen = gp;
+      for (var b = 0; b < gp.buttons.length; b++) if (gp.buttons[b] && gp.buttons[b].pressed) lastBtn = b;
       var s = padState(gp);
       ['A', 'B', 'X', 'Y', 'up', 'down', 'left', 'right'].forEach(function (k) {
         var id = i + ':' + k, isDir = k.length > 1;
@@ -237,6 +246,7 @@
         } else held[id] = false;
       });
     }
+    readout(seen);
     window.requestAnimationFrame(tick);
   }
   window.requestAnimationFrame(tick);
