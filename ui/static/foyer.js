@@ -215,14 +215,28 @@
   });
 
   // --- the pad ----------------------------------------------------------------
-  // Standard mapping: 0 A, 1 B, 2 X, 3 Y, 12 up, 13 down, 14 left, 15 right;
-  // axes 0/1 the left stick. Held directions repeat after a pause.
+  // Two layouts. STANDARD (the pad is one the browser knows): 0 A, 1 B,
+  // 2 X, 3 Y, 12-15 the D-pad, axes 0/1 the left stick. RAW (the browser
+  // found no remap — Wolf's virtual pad on Firefox/Linux, read on the TV
+  // 2026-08-29: "Y is 2, X is 3"): the buttons come in evdev code order,
+  // BTN_SOUTH A, BTN_EAST B, BTN_NORTH = Y, BTN_WEST = X, then the
+  // shoulders, select/start/mode, the thumbs, and a D-pad declared as keys
+  // after them (11-14); a D-pad declared as a hat is axes 6/7. Held
+  // directions repeat after a pause.
   var held = {}, repeatAt = {};
   function padState(gp) {
     var b = gp.buttons, ax = gp.axes, s = {};
-    s.A = b[0] && b[0].pressed; s.B = b[1] && b[1].pressed; s.X = b[2] && b[2].pressed; s.Y = b[3] && b[3].pressed;
-    s.up = (b[12] && b[12].pressed) || ax[1] < -0.5; s.down = (b[13] && b[13].pressed) || ax[1] > 0.5;
-    s.left = (b[14] && b[14].pressed) || ax[0] < -0.5; s.right = (b[15] && b[15].pressed) || ax[0] > 0.5;
+    var P = function (i) { return !!(b[i] && b[i].pressed); };
+    var lx = ax[0] || 0, ly = ax[1] || 0;
+    if (gp.mapping === 'standard') {
+      s.A = P(0); s.B = P(1); s.X = P(2); s.Y = P(3);
+      s.up = P(12) || ly < -0.5; s.down = P(13) || ly > 0.5; s.left = P(14) || lx < -0.5; s.right = P(15) || lx > 0.5;
+    } else {
+      s.A = P(0); s.B = P(1); s.Y = P(2); s.X = P(3);
+      var hx = ax[6] || 0, hy = ax[7] || 0;
+      s.up = P(11) || hy < -0.5 || ly < -0.5; s.down = P(12) || hy > 0.5 || ly > 0.5;
+      s.left = P(13) || hx < -0.5 || lx < -0.5; s.right = P(14) || hx > 0.5 || lx > 0.5;
+    }
     return s;
   }
   var padLine = '', lastBtn = -1;
