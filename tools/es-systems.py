@@ -44,9 +44,9 @@ def main() -> None:
         f.write("// lower-cased, with the dot. %d systems.\n" % len(rows))
         f.write("var systems = []System{\n")
         for name, full, exts in rows:
-            # a label that reads like a hostname (Tiger Game.com) is upstream's
-            # own name, not an environment: the repo's gate takes the marker
-            mark = "  // no-environment: ok (upstream's own name)" if re.search(r"[A-Za-z0-9]\.[a-z]{2,}\b", full) else ""
+            # a label with a dotted word in it reads like a hostname to the
+            # repo's gate: it is upstream's own name for a console, so mark it
+            mark = " // upstream's own name, not a host - no-environment: ok" if re.search(r"[A-Za-z0-9]\.[a-z]{2,}\b", full) else ""
             f.write("\t{Name: %s, Label: %s, Extensions: []string{%s}},%s\n" % (
                 gostr(name), gostr(full), ", ".join(gostr(e) for e in exts), mark))
         f.write("}\n")

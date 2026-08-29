@@ -60,7 +60,7 @@ var systems = []System{
 	{Name: "fmtowns", Label: "Fujitsu FM Towns", Extensions: []string{".cdr", ".chd", ".cue", ".gdi", ".iso"}},
 	{Name: "gamate", Label: "Bit Corporation Gamate", Extensions: []string{".7z", ".bin", ".zip"}},
 	{Name: "gameandwatch", Label: "Nintendo Game and Watch", Extensions: []string{".7z", ".mgw", ".zip"}},
-	{Name: "gamecom", Label: "Tiger Electronics Game.com", Extensions: []string{".7z", ".tgc", ".zip"}},  // no-environment: ok (upstream's own name)
+	{Name: "gamecom", Label: "Tiger Electronics Game.com", Extensions: []string{".7z", ".tgc", ".zip"}}, // upstream's own name, not a host - no-environment: ok
 	{Name: "gamegear", Label: "Sega Game Gear", Extensions: []string{".68k", ".7z", ".bin", ".bms", ".chd", ".col", ".cue", ".gen", ".gg", ".iso", ".m3u", ".md", ".mdx", ".rom", ".sg", ".sgd", ".smd", ".sms", ".zip"}},
 	{Name: "gb", Label: "Nintendo Game Boy", Extensions: []string{".7z", ".bs", ".cgb", ".dmg", ".gb", ".gbc", ".gbx", ".sfc", ".sgb", ".smc", ".zip"}},
 	{Name: "gba", Label: "Nintendo Game Boy Advance", Extensions: []string{".7z", ".agb", ".bin", ".cgb", ".dmg", ".gb", ".gba", ".gbc", ".gbx", ".sgb", ".zip"}},
