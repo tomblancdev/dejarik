@@ -30,13 +30,11 @@
           <span class="t">{{.Title}}</span>
           <span class="who" id="who">{{if .Guest.Known}}{{.Guest.Label}}{{if .Guest.Shared}} · the house's{{end}}{{else}}nobody's drawer{{end}} <span class="dim">· {{.Guest.Device}}</span></span>
         </div>
-        <div class="scroll">
-          <div id="msg"></div>
-          <div class="shelf"><span>Rooms open in the house</span><span id="rooms-n" class="dim"></span></div>
-          <div class="cards" id="rooms"><div class="empty">reading the house…</div></div>
-          <div class="shelf"><span>The house</span><span class="dim">a room is a game other devices may join · a tile is private</span></div>
-          <div class="cards" id="house"></div>
-        </div>
+        <div id="msg"></div>
+        <div class="shelf"><span>Rooms open in the house</span><span id="rooms-n" class="dim"></span></div>
+        <div class="cards" id="rooms"><div class="empty">reading the house…</div></div>
+        <div class="shelf"><span>The house</span><span class="dim">a room is a game other devices may join · a tile is private</span></div>
+        <div class="cards" id="house"></div>
         <div class="ft">
           <span>hold <b>START + UP + RB</b> in a game to come back here · <span class="k">A</span> press <span class="k">X</span> second <span class="k">Y</span> third <span class="k">B</span> back · ◀ ▶ a shelf · ▲ ▼ between shelves</span>
           <span class="dim"><span id="pad"></span> · {{if .Guest.Mode}}{{.Guest.Mode}} · {{end}}dejarik {{.Version}}</span>
