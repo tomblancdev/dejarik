@@ -20,10 +20,16 @@
   var ui = { focus: null, pin: null, msg: null, busy: false };
 
   // --- the server's data ---------------------------------------------------
+  var VERSION = body.dataset.version || '';
   function poll() {
     fetch('/foyer/' + P + '/state' + Q, { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d) { data = d; render(); } })
+      .then(function (d) {
+        // a new panel landed under an open seat: this page is the old one —
+        // reload it, unless a PIN is being turned (the next poll will)
+        if (d && VERSION && d.version && d.version !== VERSION && !ui.pin) { window.location.reload(); return; }
+        if (d) { data = d; render(); }
+      })
       .catch(function () {})
       .then(function () { window.setTimeout(poll, ((data && data.poll_seconds) || 3) * 1000); });
   }
