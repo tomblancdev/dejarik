@@ -235,7 +235,15 @@
     var P = function (i) { return !!(b[i] && b[i].pressed); };
     var lx = ax[0] || 0, ly = ax[1] || 0;
     if (gp.mapping === 'standard') {
-      s.A = P(0); s.B = P(1); s.X = P(2); s.Y = P(3);
+      // Firefox on Linux builds the standard layout from the evdev codes by
+      // POSITION: index 2 = BTN_WEST, 3 = BTN_NORTH. The kernel's LETTER
+      // codes are the other way round (BTN_X is BTN_NORTH, BTN_Y is
+      // BTN_WEST), so a pad that emits Xbox letters — Wolf's virtual pad,
+      // 045e:02ea — has X and Y crossed while still reporting "standard"
+      // (read on the TV 2026-08-29: Y at 2, X at 3). Keyed on the pad's
+      // identity; a pad Firefox has a specific remapper for is straight.
+      var crossed = /wolf|x-box|045e/i.test(gp.id || '');
+      s.A = P(0); s.B = P(1); s.X = P(crossed ? 3 : 2); s.Y = P(crossed ? 2 : 3);
       s.up = P(12) || ly < -0.5; s.down = P(13) || ly > 0.5; s.left = P(14) || lx < -0.5; s.right = P(15) || lx > 0.5;
     } else {
       s.A = P(0); s.B = P(1); s.Y = P(2); s.X = P(3);
