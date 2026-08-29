@@ -69,7 +69,7 @@ func (s *Server) state(ctx context.Context, name string, g arcade.Guest, notice 
 	p := s.cfg.Projects[name]
 	st := foyerState{Project: name, Label: p.Label, Title: p.Foyer.Title, House: s.cfg.House, Version: s.version,
 		Guest: g, Known: g.Known(), Notice: notice, PollSeconds: 3, Rooms: []arcade.Room{}, HouseShelf: []arcade.Shelf{}, Links: []linkCard{}}
-	if l := s.foyerLinks(name, g); l != nil {
+	if l := s.foyerLinks(ctx, name, g); l != nil {
 		st.Links = l
 	}
 	if v, err := s.svc.Foyer(ctx, name, g); err == nil {

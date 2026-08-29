@@ -27,9 +27,22 @@ type Config struct {
 	DataDir  string             `yaml:"data_dir"`
 	Auth     Auth               `yaml:"auth"`
 	Veilleur Veilleur           `yaml:"veilleur"`
-	Projects map[string]Project `yaml:"projects"`
+	// Authentik is the identity gateway's API — where a person's grants
+	// (the links) live, as attributes of their account. A service account's
+	// token, allowed to view and change users, arrives by environment. Empty
+	// = grants are kept in memory and forgotten at every restart (the panel
+	// says so at start).
+	Authentik Authentik         `yaml:"authentik"`
+	Projects  map[string]Project `yaml:"projects"`
 
 	names []string
+}
+
+// Authentik is the identity gateway's API, for the links.
+type Authentik struct {
+	URL      string   `yaml:"url"`
+	TokenEnv string   `yaml:"token_env"`
+	Timeout  Duration `yaml:"timeout"`
 }
 
 // Auth: identity is the proxy's job (the La Loge contract), machines carry
@@ -248,6 +261,12 @@ func Load(path string) (*Config, error) {
 	}
 	if c.Veilleur.Timeout == 0 {
 		c.Veilleur.Timeout = Duration(5 * time.Second)
+	}
+	if c.Authentik.Timeout == 0 {
+		c.Authentik.Timeout = Duration(5 * time.Second)
+	}
+	if c.Authentik.TokenEnv == "" {
+		c.Authentik.TokenEnv = "DEJARIK_AUTHENTIK_TOKEN"
 	}
 	if len(c.Projects) == 0 {
 		return nil, fmt.Errorf("no projects: Dejarik with nothing to play is a blank page")

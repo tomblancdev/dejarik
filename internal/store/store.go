@@ -37,17 +37,22 @@ type Owner struct {
 
 type file struct {
 	Owners []Owner `json:"owners"`
-	// Linked is the appliance's last report per "project/sidecar": which
-	// drawers hold a companion's link (Le Juke's Spotify), and when it said
-	// so. The appliance says it all again seconds after it is up; this only
-	// keeps a card honest while it sleeps.
-	Linked map[string]Linked `json:"linked,omitempty"`
+	// Grants are the links of SHARED drawers (the TV's): a drawer with no
+	// person behind it has no record at the identity gateway, so its grant
+	// — a refresh token of the house's app — lives here, by
+	// "project/link/drawer". A person's grant never does: it lives with the
+	// person, at the gateway. This file is 0600 and this is why.
+	Grants map[string]Grant `json:"grants,omitempty"`
 }
 
-// Linked is one such report.
-type Linked struct {
-	Drawers []string  `json:"drawers"`
-	At      time.Time `json:"at"`
+// Grant is a shared drawer's link: the house's own app's refresh token and
+// what it was minted with.
+type Grant struct {
+	RefreshToken string    `json:"refresh_token"`
+	ClientID     string    `json:"client_id"`
+	Scopes       []string  `json:"scopes,omitempty"`
+	Since        time.Time `json:"since"`
+	By           string    `json:"by,omitempty"`
 }
 
 // Store is safe for concurrent use.
@@ -163,27 +168,31 @@ func (s *Store) Of(uuid string) (Owner, bool) {
 	return Owner{}, false
 }
 
-// SetLinked records the appliance's last report on one companion of one
-// project: the drawers that hold its link, and when it said so.
-func (s *Store) SetLinked(project, sidecar string, drawers []string, at time.Time) error {
+// SetGrant keeps a shared drawer's grant, by "project/link/drawer".
+func (s *Store) SetGrant(key string, g Grant) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.f.Linked == nil {
-		s.f.Linked = map[string]Linked{}
+	if s.f.Grants == nil {
+		s.f.Grants = map[string]Grant{}
 	}
-	s.f.Linked[project+"/"+sidecar] = Linked{Drawers: append([]string(nil), drawers...), At: at}
+	s.f.Grants[key] = g
 	return s.save()
 }
 
-// LinkedReports returns every report kept, by "project/sidecar".
-func (s *Store) LinkedReports() map[string]Linked {
+// GetGrant reads one.
+func (s *Store) GetGrant(key string) (Grant, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make(map[string]Linked, len(s.f.Linked))
-	for k, v := range s.f.Linked {
-		out[k] = v
-	}
-	return out
+	g, ok := s.f.Grants[key]
+	return g, ok
+}
+
+// DeleteGrant forgets one.
+func (s *Store) DeleteGrant(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.f.Grants, key)
+	return s.save()
 }
 
 // All returns every claim, newest first.

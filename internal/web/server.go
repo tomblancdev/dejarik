@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -36,7 +37,24 @@ func New(cfg *config.Config, svc *arcade.Service, au *auth.Auth, version string,
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, svc: svc, au: au, hub: links.New(memory{svc.Store()}, log), log: log, version: version, tpl: tpl}, nil
+	// the links' vault: the identity gateway when the config names it (a
+	// person's grant lives with the person), memory otherwise — and the
+	// panel says so, because memory forgets every link at a restart
+	var vault links.Vault = links.NewMemoryVault()
+	if cfg.Authentik.URL != "" {
+		tok := os.Getenv(cfg.Authentik.TokenEnv)
+		if tok == "" {
+			log.Warn("no authentik token: links cannot be kept with people", "env", cfg.Authentik.TokenEnv)
+		}
+		vault = links.NewAuthentik(cfg.Authentik.URL, tok, cfg.Authentik.Timeout.D())
+	} else {
+		for _, n := range cfg.Names() {
+			if cfg.Projects[n].HasLinks() {
+				log.Warn("no authentik url: the links are kept in memory and forgotten at every restart", "project", n)
+			}
+		}
+	}
+	return &Server{cfg: cfg, svc: svc, au: au, hub: links.New(vault, shelf{svc.Store()}, log), log: log, version: version, tpl: tpl}, nil
 }
 
 // Hub is the links hub, for tests.
@@ -71,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 	// tap; the sync is the APPLIANCE's, from the Foyer's sources only
 	mux.HandleFunc("GET /api/projects/{name}/links", s.apiLinks)
 	mux.HandleFunc("POST /api/projects/{name}/links/sync", s.apiLinksSync)
+	mux.HandleFunc("GET /api/projects/{name}/links/{sidecar}/token", s.apiLinkToken)
 	mux.HandleFunc("GET /links/{name}/{sidecar}/start", s.linkStart)
 	mux.HandleFunc("GET /links/callback", s.linkCallback)
 
@@ -118,17 +137,19 @@ func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	started, parked, handed, unlinked := s.hub.Counters()
+	started, linked, unlinked, refreshed, handed := s.hub.Counters()
 	_, _ = w.Write([]byte("# HELP dejarik_build_info Build information.\n# TYPE dejarik_build_info gauge\n" +
 		"dejarik_build_info{version=\"" + s.version + "\"} 1\n" + s.svc.Metrics(r.Context()) +
 		"# HELP dejarik_links_started_total Link dances started (a person sent to the provider).\n# TYPE dejarik_links_started_total counter\n" +
 		"dejarik_links_started_total " + itoa(started) + "\n" +
-		"# HELP dejarik_links_parked_total Tokens that came back and waited for the appliance.\n# TYPE dejarik_links_parked_total counter\n" +
-		"dejarik_links_parked_total " + itoa(parked) + "\n" +
-		"# HELP dejarik_links_handed_total Tokens the appliance took.\n# TYPE dejarik_links_handed_total counter\n" +
-		"dejarik_links_handed_total " + itoa(handed) + "\n" +
-		"# HELP dejarik_unlinks_total Unlinks queued for the appliance.\n# TYPE dejarik_unlinks_total counter\n" +
-		"dejarik_unlinks_total " + itoa(unlinked) + "\n"))
+		"# HELP dejarik_links_linked_total Grants stored (a dance that came back and was kept).\n# TYPE dejarik_links_linked_total counter\n" +
+		"dejarik_links_linked_total " + itoa(linked) + "\n" +
+		"# HELP dejarik_links_unlinked_total Grants forgotten.\n# TYPE dejarik_links_unlinked_total counter\n" +
+		"dejarik_links_unlinked_total " + itoa(unlinked) + "\n" +
+		"# HELP dejarik_links_refreshed_total Access tokens minted from a grant (the provider asked).\n# TYPE dejarik_links_refreshed_total counter\n" +
+		"dejarik_links_refreshed_total " + itoa(refreshed) + "\n" +
+		"# HELP dejarik_links_handed_total Access tokens handed to the appliance (cache or fresh).\n# TYPE dejarik_links_handed_total counter\n" +
+		"dejarik_links_handed_total " + itoa(handed) + "\n"))
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -296,7 +317,7 @@ func (s *Server) clientsData(ctx context.Context, v arcade.View, id auth.Identit
 		// the links: what a person may tie to their drawer (an admin: every
 		// drawer's), and what the appliance last said about each
 		c.HasLinks = p.HasLinks()
-		c.Links = s.linkStates(v.Name, id)
+		c.Links = s.linkStates(ctx, v.Name, id)
 	}
 	// The device list needs the engine's API, which needs the engine to be
 	// up. Asleep is not an error, so say nothing rather than shout.

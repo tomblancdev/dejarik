@@ -124,30 +124,32 @@ phone's slider its fader. The companion needs one file in the drawer: the
 account's stored credentials. Making it was a terminal's job; here it is a
 tap.
 
-**On the panel** (your phone): *my accounts* — **LINK** sends you to the
-provider's own page with the house's app (Authorization Code with **PKCE**:
-no secret anywhere, so the client id sits in the readable config), you
-agree, you land back here, and the short-lived token **waits in memory**
-for the appliance — woken if asleep, since only it can take it. The word on
-the card — *linked · not linked · linking · unlinking · unknown* — is the
-**appliance's last report**, remembered with its time; never a guess. Flip
-the switch to unlink. An admin sees every drawer (the TV's shared one
-included).
+**On the panel** (your phone, wherever it is): *my accounts* — **LINK**
+sends you to the provider's own page with the house's app (Authorization
+Code with **PKCE**: no secret anywhere, so the client id sits in the
+readable config), you agree, you land back here — **linked**. The code was
+traded for tokens and the refresh token, **the grant**, went **with you**:
+into your record at the identity gateway (`attributes.links.spotify`),
+where any program of the house you agree to may find it later. A shared
+drawer (the TV's) has no person, so its grant stays with the panel. Flip
+the switch to unlink: the grant is forgotten at once. An admin sees every
+drawer.
 
 **In the stream** (Le Foyer's third shelf): the same card shows a **QR
 code** — scan it with your phone and it opens the panel, signed in as you,
 straight at the provider's page for *this* drawer; the card flips by itself
-when the link has landed. A stream is no place to type a password: the
-phone is.
+once you are back. A stream is no place to type a password: the phone is.
 
-**The appliance's half** is one endpoint: `POST /api/projects/{name}/links/sync`,
-from the Foyer's sources only — it reports which drawers hold each
-companion's file and takes what is pending (a token, handed once, never
-logged; or a drawer to unlink). The watcher on the appliance
-(`wolf-sidecars`, in the `tomblancdev.arcade` collection) calls it every
-few seconds and runs the companion's `link` mode with the token, as the
-drawer's uid, on the drawer's own folder — outside every app home, so one
-link serves every tile and no golden template ever carries it.
+**The panel is the broker.** The appliance keeps nothing: its watcher
+(`wolf-sidecars`, in the `tomblancdev.arcade` collection) asks every few
+seconds *who is linked* (`POST /api/projects/{name}/links/sync`) and starts
+a device beside every seat of a linked drawer; the device asks *a token*
+(`GET /api/projects/{name}/links/{sidecar}/token?drawer=…`) and the panel
+mints an hour's access token from the grant — cached, refreshed before it
+expires, the provider's rotated grant written back where it lives. Both
+verbs answer from the Foyer's sources only; a token is never logged. The
+gateway side needs one service account allowed to view and change users,
+its API token by environment (`DEJARIK_AUTHENTIK_TOKEN`).
 
 ## Two truths, never collapsed
 

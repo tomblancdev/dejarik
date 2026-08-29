@@ -158,19 +158,17 @@
           <input type="hidden" name="for" value="{{.Drawer}}">
           <button class="tog" type="submit" title="unlink {{.Label}}" aria-label="unlink {{.Label}} from {{.DrawerLabel}}'s drawer"><b></b></button>
         </form>
-        {{else if or .Status.Pending .Status.Unlinking}}
-        <span class="tog" aria-hidden="true"><b></b></span>
         {{else}}
         <a class="pb small" href="/links/{{$.Project}}/{{.Sidecar}}/start?for={{.Drawer}}" title="link {{.Label}} to {{.DrawerLabel}}'s drawer"><span class="cap">link</span></a>
         {{end}}
-        <div class="lamp {{if .Status.Linked}}green{{else if or .Status.Pending .Status.Unlinking}}amber{{else}}green off{{end}}"><i></i></div>
+        <div class="lamp green{{if not .Status.Linked}} off{{end}}"><i></i></div>
         <div class="eng t9">{{.Label}}</div>
-        <div class="eng t9" style="opacity:.6">{{.DrawerLabel}}{{if .Shared}} · shared{{end}} · {{.Word}}{{if .At}} · the appliance said so at {{.At}}{{end}}</div>
+        <div class="eng t9" style="opacity:.6">{{.DrawerLabel}}{{if .Shared}} · shared{{end}} · {{.Word}}{{if .Since}} · since {{.Since}}{{end}}{{if and .Status.Linked .Status.By}} · by {{.Status.By}}{{end}}</div>
       </div>
       {{end}}
     </div>
     {{end}}
-    <div class="note">An account linked to a drawer rides under every seat of that drawer — a receiver beside the game, driven from your phone. LINK opens the provider's own page; the appliance takes it from there, woken if it sleeps. The word is the appliance's last report, not a guess. Flip the switch down to unlink.</div>
+    <div class="note">An account linked to a drawer rides under every seat of that drawer — a device beside the game, driven from your phone, wherever the phone is. LINK opens the provider's own page; agree, and you are back here, linked: the grant stays with you at the gateway, the appliance only ever gets an hour's token. Flip the switch down to unlink.</div>
     {{end}}
     {{end}}
   </div>

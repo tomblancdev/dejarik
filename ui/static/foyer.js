@@ -101,10 +101,8 @@
     // to scan, and flips by itself once the appliance has taken the link.
     if (known) (data.links || []).forEach(function (l) {
       var st = l.status || {}, acts = [], sub;
-      if (st.linked) { sub = 'linked · under every seat you open' + (st.reported_at ? ' · the appliance said so at ' + hhmm(st.reported_at) : ''); acts.push({ glyph: 'Y', label: 'unlink', verb: 'unlink', target: l.sidecar }); }
-      else if (st.pending) sub = 'linking… the appliance takes it within seconds';
-      else if (st.unlinking) sub = 'unlinking…';
-      else { sub = (st.reported ? 'not linked' : 'the appliance has not said yet') + ' · music under your game, from your phone'; acts.push({ glyph: 'A', label: 'link — show the code', verb: 'qr', target: l.sidecar }); }
+      if (st.linked) { sub = 'linked · under every seat you open' + (st.since ? ' · since ' + hhmm(st.since) : ''); acts.push({ glyph: 'Y', label: 'unlink', verb: 'unlink', target: l.sidecar }); }
+      else { sub = 'not linked · music under your game, from your phone'; acts.push({ glyph: 'A', label: 'link — show the code', verb: 'qr', target: l.sidecar }); }
       out.push({ key: 'link:' + l.sidecar, shelf: 'mine', title: l.label, icon: '', sub: sub, acts: acts, qr: l.qr });
     });
     return out;

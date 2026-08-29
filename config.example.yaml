@@ -22,6 +22,15 @@ veilleur:
   token_env: DEJARIK_VEILLEUR_TOKEN
   timeout: 5s
 
+# the identity gateway's API: where a PERSON's links live (the grants of the
+# house's app at a provider, as attributes of their account - attributes.links).
+# A service account allowed to view and change users; its API token by
+# environment. Leave it out and links are kept in memory: gone at a restart.
+authentik:
+  url: "http://192.0.2.30:9000"
+  token_env: DEJARIK_AUTHENTIK_TOKEN
+  timeout: 5s
+
 projects:
   # An APPLIANCE: a seat engine (Wolf) with a drawer per person. Identity is
   # the pairing — a device is pointed at a drawer and opens that person's
@@ -67,13 +76,14 @@ projects:
     # appliance. The house's own app at the provider, Authorization Code
     # with PKCE - no secret anywhere, so the client id may sit here; the
     # provider sends the person back to <base_url>/links/callback (register
-    # exactly that). The appliance reports and takes links through
-    # /api/projects/<name>/links/sync, from the foyer's sources.
+    # exactly that). The appliance asks who is linked and an hour's token
+    # through /api/projects/<name>/links/..., from the foyer's sources; the
+    # grant stays with the person (authentik above).
     links:
       spotify:
         kind: spotify
         client_id: "0123456789abcdef0123456789abcdef"
-        scopes: [streaming]
+        scopes: [streaming, user-read-email, user-read-private]   # the Web Playback SDK's three
         label: "Spotify"
 
   # A CONSOLE: one machine, one desktop, Sunshine; pairing relayed to its web

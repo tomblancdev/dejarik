@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,35 +19,39 @@ import (
 	"github.com/tomblancdev/dejarik/internal/store"
 )
 
-// The links — an external account, linked to a drawer with a tap (links.go
-// in the domain says why). Three faces:
+// The links — an external account, tied to a drawer with a tap (links.go in
+// the domain says why). The panel is the broker: the grant lives with the
+// person at the identity gateway, and the appliance asks here for a token.
 //
 //	GET  /links/{name}/{sidecar}/start?for=   a person (own drawer; an admin any) → the provider
-//	GET  /links/callback?code&state           the provider sends the person back; the token waits
-//	POST /unlink/{name}   link, for           queue the drawer's unlink
-//	POST /api/projects/{name}/links/sync      THE APPLIANCE: reports who is linked, takes what is pending
+//	GET  /links/callback?code&state           the provider sends the person back: the grant is stored
+//	POST /unlink/{name}   link, for           the grant is forgotten
+//	POST /api/projects/{name}/links/sync      THE APPLIANCE: which drawers are linked, per link
+//	GET  /api/projects/{name}/links/{sidecar}/token?drawer=   THE APPLIANCE: an hour's access token
 //	GET  /api/projects/{name}/links           the caller's links (every drawer's, for an admin)
 //	GET  /foyer/{name}/links/{sidecar}/qr     in the stream: the QR the phone scans (→ /start for the seat's drawer)
 //	POST /foyer/{name}/links/{sidecar}/unlink in the stream: the seat's own drawer
 //
-// The sync answers only from the appliance's addresses (the Foyer's
-// sources), like the Foyer itself: the row is the lock. A token is handed
-// once and never logged.
+// The appliance's two verbs answer only from its addresses (the Foyer's
+// sources), like the Foyer itself: the row is the lock. A token is never
+// logged.
 
-// memory adapts the store to the hub's memory of the appliance's reports.
-type memory struct{ st *store.Store }
+// shelf adapts the store to the hub's shelf for shared drawers.
+type shelf struct{ st *store.Store }
 
-func (m memory) SetLinked(project, sidecar string, drawers []string, at time.Time) error {
-	return m.st.SetLinked(project, sidecar, drawers, at)
+func (s shelf) SetGrant(k string, g links.Grant) error {
+	return s.st.SetGrant(k, store.Grant{RefreshToken: g.RefreshToken, ClientID: g.ClientID, Scopes: g.Scopes, Since: g.Since, By: g.By})
 }
 
-func (m memory) Linked() map[string]links.Report {
-	out := map[string]links.Report{}
-	for k, v := range m.st.LinkedReports() {
-		out[k] = links.Report{Drawers: v.Drawers, At: v.At}
+func (s shelf) GetGrant(k string) (links.Grant, bool) {
+	g, ok := s.st.GetGrant(k)
+	if !ok {
+		return links.Grant{}, false
 	}
-	return out
+	return links.Grant{RefreshToken: g.RefreshToken, ClientID: g.ClientID, Scopes: g.Scopes, Since: g.Since, By: g.By}, true
 }
+
+func (s shelf) DeleteGrant(k string) error { return s.st.DeleteGrant(k) }
 
 func (s *Server) redirectURI() string { return strings.TrimRight(s.cfg.BaseURL, "/") + "/links/callback" }
 
@@ -76,7 +81,7 @@ func (s *Server) linkStart(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	name, sidecar, _, l, ok := s.linkOf(w, r)
+	name, sidecar, p, l, ok := s.linkOf(w, r)
 	if !ok {
 		return
 	}
@@ -86,7 +91,7 @@ func (s *Server) linkStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	state, verifier := s.hub.Begin(name, sidecar, drawer, id.User)
+	state, verifier := s.hub.Begin(name, sidecar, drawer, id.User, p.People[drawer].Shared)
 	u, err := links.AuthorizeURL(l.Kind, l.ClientID, s.redirectURI(), state, links.Challenge(verifier), l.Scopes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -97,8 +102,8 @@ func (s *Server) linkStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // linkCallback is where the provider sends the person back. The code is
-// traded for a token, which then waits for the appliance — woken if asleep,
-// since nothing else would ever take it.
+// traded for tokens; the refresh token — the grant — goes to the person's
+// record at the gateway (a shared drawer's to the panel's own store).
 func (s *Server) linkCallback(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.who(w, r)
 	if !ok {
@@ -111,40 +116,30 @@ func (s *Server) linkCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	p := s.cfg.Projects[st.Project]
 	l := p.Links[st.Sidecar]
+	back := strings.TrimRight(s.cfg.BaseURL, "/") + "/"
 	if e := r.FormValue("error"); e != "" {
 		s.log.Warn("link refused by the provider", "project", st.Project, "link", st.Sidecar, "drawer", st.Drawer, "by", id.User, "err", e)
-		http.Error(w, l.Label+" said: "+e+" — nothing was linked. Back to the panel: "+strings.TrimRight(s.cfg.BaseURL, "/")+"/", http.StatusBadRequest)
+		http.Error(w, l.Label+" said: "+e+" — nothing was linked. Back to the panel: "+back, http.StatusBadRequest)
 		return
 	}
-	token, ttl, err := s.hub.Exchange(r.Context(), l.Kind, l.ClientID, s.redirectURI(), r.FormValue("code"), st.Verifier)
+	tok, refresh, err := s.hub.Exchange(r.Context(), l.Kind, l.ClientID, s.redirectURI(), r.FormValue("code"), st.Verifier)
 	if err != nil {
 		s.log.Warn("link failed at the provider", "project", st.Project, "link", st.Sidecar, "drawer", st.Drawer, "by", id.User, "err", err)
 		http.Error(w, "the code could not be traded for a token: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	s.hub.Add(links.Pending{Project: st.Project, Sidecar: st.Sidecar, Drawer: st.Drawer, Token: token, By: id.User, Expires: time.Now().Add(ttl - 30*time.Second)})
-	s.log.Info("link pending — the appliance takes it at its next report", "project", st.Project, "link", st.Sidecar, "drawer", st.Drawer, "by", id.User, "token_ttl", ttl.String())
+	g := links.Grant{RefreshToken: refresh, ClientID: l.ClientID, Scopes: l.Scopes, Since: time.Now(), By: id.User}
+	if err := s.hub.Link(r.Context(), st.Project, st.Sidecar, st.Drawer, st.Shared, g, tok); err != nil {
+		s.log.Error("the grant could not be stored", "project", st.Project, "link", st.Sidecar, "drawer", st.Drawer, "by", id.User, "err", err)
+		http.Error(w, "linked at "+l.Label+", but the grant could not be kept: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	s.log.Info("linked", "project", st.Project, "link", st.Sidecar, "drawer", st.Drawer, "by", id.User, "shared", st.Shared)
 	s.svc.Store().Event("link", id.User, st.Project+"/"+st.Sidecar+" -> "+st.Drawer)
-	s.wakeForLinks(r, st.Project, id)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// wakeForLinks raises the appliance when something waits for it: a token
-// parked in memory expires within the hour, and only the appliance can
-// take it. Idempotent, like /play.
-func (s *Server) wakeForLinks(r *http.Request, name string, id auth.Identity) {
-	p := s.cfg.Projects[name]
-	if p.HandStarted() || !s.hub.Waiting(name) {
-		return
-	}
-	if v, found := s.svc.View(r.Context(), name); found && v.State != arcade.Ready {
-		if _, err := s.svc.Play(r.Context(), name, id); err != nil {
-			s.log.Warn("the appliance could not be woken for a pending link", "project", name, "err", err)
-		}
-	}
-}
-
-// unlink queues a drawer's unlink from the panel.
+// unlink forgets a drawer's grant, from the panel.
 func (s *Server) unlink(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.who(w, r)
 	if !ok {
@@ -159,55 +154,83 @@ func (s *Server) unlink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	drawer, err := s.svc.DrawerOf(name, r.FormValue("for"), id)
+	if err == nil {
+		err = s.hub.Unlink(r.Context(), name, sidecar, drawer, p.People[drawer].Shared)
+	}
 	if err != nil {
 		s.log.Warn("unlink refused", "project", name, "link", sidecar, "by", id.User, "for", r.FormValue("for"), "err", err)
 		errMsg = err.Error()
 	} else {
-		s.hub.QueueUnlink(name, sidecar, drawer)
-		s.log.Info("unlink queued", "project", name, "link", sidecar, "drawer", drawer, "by", id.User)
+		s.log.Info("unlinked", "project", name, "link", sidecar, "drawer", drawer, "by", id.User)
 		s.svc.Store().Event("unlink", id.User, name+"/"+sidecar+" -> "+drawer)
-		s.wakeForLinks(r, name, id)
-		notice = "Unlinking " + p.Links[sidecar].Label + " — the appliance removes it at its next report (seconds when it is on)."
+		notice = "Unlinked " + p.Links[sidecar].Label + ". A seat already open keeps its music until it closes."
 	}
 	s.afterClients(w, r, name, id, errMsg, notice)
 }
 
-// apiLinksSync is the appliance's turn: it says which drawers hold each
-// companion's file and takes what is pending. From the Foyer's sources only.
-func (s *Server) apiLinksSync(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
+// fromAppliance is the lock on the appliance's two verbs.
+func (s *Server) fromAppliance(w http.ResponseWriter, r *http.Request, name string) (config.Project, bool) {
 	p, ok := s.cfg.Projects[name]
 	if !ok || !p.HasLinks() {
 		fail(w, http.StatusNotFound, "no such project, or nothing to link on it")
-		return
+		return p, false
 	}
 	if !s.svc.FromAppliance(name, remoteIP(r)) {
-		s.log.Debug("links sync refused", "project", name, "from", r.RemoteAddr)
-		fail(w, http.StatusForbidden, "the appliance reports here, nobody else")
+		s.log.Debug("links refused", "project", name, "from", r.RemoteAddr)
+		fail(w, http.StatusForbidden, "the appliance asks here, nobody else")
+		return p, false
+	}
+	return p, true
+}
+
+// apiLinksSync tells the appliance which drawers are linked, per link.
+func (s *Server) apiLinksSync(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	p, ok := s.fromAppliance(w, r, name)
+	if !ok {
 		return
 	}
-	var body struct {
-		Linked map[string][]string `json:"linked"`
+	linked := map[string][]string{}
+	for _, sidecar := range p.LinkNames() {
+		linked[sidecar] = []string{}
+		for _, d := range p.Drawers() {
+			if s.hub.Status(r.Context(), name, sidecar, d, p.People[d].Shared).Linked {
+				linked[sidecar] = append(linked[sidecar], d)
+			}
+		}
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		fail(w, http.StatusBadRequest, "a body like {\"linked\": {\"spotify\": [\"someone\"]}}")
+	writeJSON(w, http.StatusOK, map[string]any{"linked": linked})
+}
+
+// apiLinkToken hands the appliance an access token for a drawer's link —
+// from the broker's cache, or a refresh of the grant. Never logged.
+func (s *Server) apiLinkToken(w http.ResponseWriter, r *http.Request) {
+	name, sidecar := r.PathValue("name"), r.PathValue("sidecar")
+	p, ok := s.fromAppliance(w, r, name)
+	if !ok {
 		return
 	}
-	s.hub.Report(name, body.Linked)
-	pending, unlinks := s.hub.Take(name)
-	for _, x := range pending {
-		s.log.Info("link handed to the appliance", "project", name, "link", x.Sidecar, "drawer", x.Drawer, "by", x.By)
+	if _, has := p.Links[sidecar]; !has {
+		fail(w, http.StatusNotFound, "nothing called "+sidecar+" to link here")
+		return
 	}
-	for _, x := range unlinks {
-		s.log.Info("unlink handed to the appliance", "project", name, "link", x.Sidecar, "drawer", x.Drawer)
+	drawer := strings.TrimSpace(r.FormValue("drawer"))
+	person, isDrawer := p.Drawer(drawer)
+	if !isDrawer {
+		fail(w, http.StatusNotFound, "no drawer called "+drawer)
+		return
 	}
-	if pending == nil {
-		pending = []links.Pending{}
+	tok, err := s.hub.AccessToken(r.Context(), name, sidecar, drawer, person.Shared)
+	switch {
+	case errors.Is(err, links.ErrNotLinked):
+		fail(w, http.StatusNotFound, drawer+" is not linked to "+sidecar)
+	case err != nil:
+		s.log.Warn("no token for the appliance", "project", name, "link", sidecar, "drawer", drawer, "err", err)
+		fail(w, http.StatusBadGateway, err.Error())
+	default:
+		s.log.Info("token handed to the appliance", "project", name, "link", sidecar, "drawer", drawer, "good_for", time.Until(tok.Expires).Round(time.Second).String())
+		writeJSON(w, http.StatusOK, map[string]any{"access_token": tok.Access, "expires_in": int(time.Until(tok.Expires).Seconds())})
 	}
-	if unlinks == nil {
-		unlinks = []links.Unlink{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"pending": pending, "unlink": unlinks})
 }
 
 // linkVM is one drawer's link, for the panel and the API.
@@ -221,12 +244,12 @@ type linkVM struct {
 	Mine        bool         `json:"mine"`
 	Status      links.Status `json:"status"`
 	Word        string       `json:"word"`
-	At          string       `json:"at,omitempty"`
+	Since       string       `json:"since,omitempty"`
 }
 
 // linkStates lists the links the caller may see: their own drawer's; every
 // drawer's for an admin.
-func (s *Server) linkStates(name string, id auth.Identity) []linkVM {
+func (s *Server) linkStates(ctx context.Context, name string, id auth.Identity) []linkVM {
 	p, ok := s.cfg.Projects[name]
 	if !ok || !p.HasLinks() {
 		return nil
@@ -240,10 +263,10 @@ func (s *Server) linkStates(name string, id auth.Identity) []linkVM {
 			if !id.IsAdmin() && !mine {
 				continue
 			}
-			st := s.hub.Status(name, sidecar, d)
+			st := s.hub.Status(ctx, name, sidecar, d, person.Shared)
 			vm := linkVM{Sidecar: sidecar, Label: l.Label, Kind: l.Kind, Drawer: d, DrawerLabel: person.Label, Shared: person.Shared, Mine: mine, Status: st, Word: st.Word()}
-			if st.Reported {
-				vm.At = st.ReportedAt.Local().Format("15:04")
+			if st.Linked && !st.Since.IsZero() {
+				vm.Since = st.Since.Local().Format("2006-01-02 15:04")
 			}
 			out = append(out, vm)
 		}
@@ -262,7 +285,7 @@ func (s *Server) apiLinks(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "no such project")
 		return
 	}
-	out := s.linkStates(name, id)
+	out := s.linkStates(r.Context(), name, id)
 	if out == nil {
 		out = []linkVM{}
 	}
@@ -282,14 +305,14 @@ type linkCard struct {
 	QR string `json:"qr"`
 }
 
-func (s *Server) foyerLinks(name string, g arcade.Guest) []linkCard {
+func (s *Server) foyerLinks(ctx context.Context, name string, g arcade.Guest) []linkCard {
 	p := s.cfg.Projects[name]
 	if !g.Known() || !p.HasLinks() {
 		return nil
 	}
 	var out []linkCard
 	for _, sidecar := range p.LinkNames() {
-		st := s.hub.Status(name, sidecar, g.Person)
+		st := s.hub.Status(ctx, name, sidecar, g.Person, g.Shared)
 		out = append(out, linkCard{Sidecar: sidecar, Label: p.Links[sidecar].Label, Word: st.Word(), Status: st,
 			QR: "/foyer/" + name + "/links/" + url.PathEscape(sidecar) + "/qr"})
 	}
@@ -341,11 +364,11 @@ func (s *Server) foyerUnlink(w http.ResponseWriter, r *http.Request) {
 		s.foyerAfter(w, r, name, g, "this device is nobody's yet — an admin points it at a drawer on the panel first", "")
 		return
 	}
-	s.hub.QueueUnlink(name, sidecar, g.Person)
-	s.log.Info("unlink queued", "project", name, "link", sidecar, "drawer", g.Person, "by", "foyer:"+g.Device)
+	if err := s.hub.Unlink(r.Context(), name, sidecar, g.Person, g.Shared); err != nil {
+		s.foyerAfter(w, r, name, g, "the grant could not be forgotten: "+err.Error(), "")
+		return
+	}
+	s.log.Info("unlinked", "project", name, "link", sidecar, "drawer", g.Person, "by", "foyer:"+g.Device)
 	s.svc.Store().Event("unlink", g.Person, name+"/"+sidecar+" (from the foyer)")
-	s.foyerAfter(w, r, name, g, "", fmt.Sprintf("Unlinking %s — gone within seconds.", l.Label))
+	s.foyerAfter(w, r, name, g, "", fmt.Sprintf("Unlinked %s. A seat already open keeps its music until it closes.", l.Label))
 }
-
-// errNoLinks is what a project without links answers.
-var errNoLinks = errors.New("nothing to link on this project")
