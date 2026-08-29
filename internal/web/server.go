@@ -11,20 +11,24 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tomblancdev/dejarik/internal/arcade"
 	"github.com/tomblancdev/dejarik/internal/auth"
 	"github.com/tomblancdev/dejarik/internal/config"
+	"github.com/tomblancdev/dejarik/internal/library"
 	"github.com/tomblancdev/dejarik/internal/links"
 	"github.com/tomblancdev/dejarik/ui"
 )
 
 // Server wires the handlers.
 type Server struct {
-	cfg     *config.Config
-	svc     *arcade.Service
-	au      *auth.Auth
-	hub     *links.Hub
+	cfg *config.Config
+	svc *arcade.Service
+	au  *auth.Auth
+	hub *links.Hub
+	// libs: the house store of every project that carries one (library.go)
+	libs    map[string]*library.Store
 	log     *slog.Logger
 	version string
 	tpl     *template.Template
@@ -54,7 +58,25 @@ func New(cfg *config.Config, svc *arcade.Service, au *auth.Auth, version string,
 			}
 		}
 	}
-	return &Server{cfg: cfg, svc: svc, au: au, hub: links.New(vault, shelf{svc.Store()}, log), log: log, version: version, tpl: tpl}, nil
+	libs := map[string]*library.Store{}
+	for _, n := range cfg.Names() {
+		if p := cfg.Projects[n]; p.HasLibrary() {
+			libs[n] = library.Open(p.Library.Path, log.With("project", n))
+			if !libs[n].Ready() {
+				log.Warn("the library's store is away at start: the page will say so, a push is refused until it answers", "project", n, "path", p.Library.Path)
+			}
+		}
+	}
+	return &Server{cfg: cfg, svc: svc, au: au, hub: links.New(vault, shelf{svc.Store()}, log), libs: libs, log: log, version: version, tpl: tpl}, nil
+}
+
+// Run keeps the stores read in the background until ctx ends, so a page
+// never waits on a mount that stopped answering.
+func (s *Server) Run(ctx context.Context) {
+	for _, l := range s.libs {
+		go l.Run(ctx, 20*time.Second)
+	}
+	<-ctx.Done()
 }
 
 // Hub is the links hub, for tests.
@@ -92,6 +114,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/projects/{name}/links/{sidecar}/token", s.apiLinkToken)
 	mux.HandleFunc("GET /links/{name}/{sidecar}/start", s.linkStart)
 	mux.HandleFunc("GET /links/callback", s.linkCallback)
+	// the library (library.go): the house store's shelves, and a push
+	mux.HandleFunc("GET /api/projects/{name}/library", s.apiLibrary)
+	mux.HandleFunc("GET /api/projects/{name}/library/detect", s.apiLibraryDetect)
+	mux.HandleFunc("POST /api/projects/{name}/library", s.apiLibraryPush)
 
 	// the panel
 	mux.HandleFunc("GET /{$}", s.home)
@@ -103,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /stop/{name}", s.stop)
 	mux.HandleFunc("POST /room-stop/{name}", s.roomStop)
 	mux.HandleFunc("POST /unlink/{name}", s.unlink)
+	mux.HandleFunc("POST /library/{name}", s.libraryPush)
 
 	// Le Foyer: the page in the stream (foyer.go) — its own identity, no
 	// proxy in front
@@ -149,7 +176,7 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 		"# HELP dejarik_links_refreshed_total Access tokens minted from a grant (the provider asked).\n# TYPE dejarik_links_refreshed_total counter\n" +
 		"dejarik_links_refreshed_total " + itoa(refreshed) + "\n" +
 		"# HELP dejarik_links_handed_total Access tokens handed to the appliance (cache or fresh).\n# TYPE dejarik_links_handed_total counter\n" +
-		"dejarik_links_handed_total " + itoa(handed) + "\n"))
+		"dejarik_links_handed_total " + itoa(handed) + "\n" + s.libraryMetrics()))
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -318,6 +345,12 @@ func (s *Server) clientsData(ctx context.Context, v arcade.View, id auth.Identit
 		// drawer's), and what the appliance last said about each
 		c.HasLinks = p.HasLinks()
 		c.Links = s.linkStates(ctx, v.Name, id)
+		// the library: the house store's shelves (everybody), the push
+		// form (admins)
+		if l, ok := s.libs[v.Name]; ok {
+			c.HasLibrary = true
+			c.Library = libraryData(l, v.Name)
+		}
 	}
 	// The device list needs the engine's API, which needs the engine to be
 	// up. Asleep is not an error, so say nothing rather than shout.

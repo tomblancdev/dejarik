@@ -170,6 +170,52 @@
     {{end}}
     <div class="note">An account linked to a drawer rides under every seat of that drawer — a device beside the game, driven from your phone, wherever the phone is. LINK opens the provider's own page; agree, and you are back here, linked: the grant stays with you at the gateway, the appliance only ever gets an hour's token. Flip the switch down to unlink.</div>
     {{end}}
+
+    {{if .HasLibrary}}{{with .Library}}
+    <div class="seam"></div>
+    <div class="between">
+      <div class="eng t11">library // the house store</div>
+      <div class="eng t9" style="opacity:.7">{{.Titles}} title{{if ne .Titles 1}}s{{end}} · {{.Size}}</div>
+    </div>
+    {{if not .Ready}}
+    <div class="err">The store is away — {{.Why}}. Nothing can be pushed until it answers; the seats mount the store themselves and are unaffected.</div>
+    {{else if .Shelves}}
+    <div class="devs">
+      {{range .Shelves}}
+      <div class="dev">
+        <div class="lamp green{{if not .Known}} off{{end}}"><i></i></div>
+        <div class="eng t9">{{.System}}</div>
+        <div class="eng t9" style="opacity:.6">{{.Label}} · {{.Titles}} · {{.Size}}</div>
+      </div>
+      {{end}}
+    </div>
+    <div class="note">A shelf per system, named as ES-DE names them; every seat reads the same shelves. A title lands on its shelf and shows up in RetroDECK at its next scan (Utilities → Rescan ROM directory, or restart it).</div>
+    {{else}}
+    <div class="note">The store is empty — no shelf yet.</div>
+    {{end}}
+    {{if $.Admin}}
+    {{/* hx-preserve on the whole form: the block re-reads itself every few
+         seconds, and a file picked (or a push in flight, with its bar) must
+         survive the swap. The script (library.js) asks the shelf of a name
+         before uploading, drives the bar, and resets the form once landed. */}}
+    <form class="stack push" id="library-{{.Project}}" hx-preserve="true" method="post" action="/library/{{.Project}}" enctype="multipart/form-data" autocomplete="off"
+          hx-post="/library/{{.Project}}" hx-encoding="multipart/form-data" hx-target="#project-{{.Project}}" hx-swap="outerHTML"
+          data-detect="/api/projects/{{.Project}}/library/detect">
+      <div class="eng t10">add a title — push a rom onto its shelf</div>
+      <div class="pinrow">
+        <input class="field file" type="file" name="file" multiple aria-label="the file, or a disc image with its cue and bins">
+        <select class="field" name="system" aria-label="the shelf">
+          <option value="">the shelf from the file's name</option>
+          {{range .Systems}}<option value="{{.Name}}">{{.Name}} — {{.Label}}</option>{{end}}
+        </select>
+      </div>
+      <div class="note" data-words></div>
+      <progress class="push" value="0" max="100" hidden></progress>
+      <button class="pb small" type="submit" {{if not .Ready}}disabled{{end}}><span class="cap">push</span></button>
+      <div class="note">Legal titles only — your own dumps, or free/homebrew. A title already on the shelf is refused, never replaced; a file lands whole or not at all. Disc images (.iso .cue .bin .chd) and archives cannot tell their system: pick the shelf.</div>
+    </form>
+    {{end}}
+    {{end}}{{end}}
     {{end}}
   </div>
 </section>

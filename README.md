@@ -151,6 +151,37 @@ verbs answer from the Foyer's sources only; a token is never logged. The
 gateway side needs one service account allowed to view and change users,
 its API token by environment (`DEJARIK_AUTHENTIK_TOKEN`).
 
+## The library — a title pushed onto its shelf
+
+The seats read one **house store**: a folder per system, laid out the way
+ES-DE (RetroDECK's front end) reads one, mounted read-only into every seat.
+Filling it was a terminal's job — a root `scp` from a laptop. Here it is a
+card: *library // the house store* lists the shelves (system, titles, size),
+and an **admin** drops a file on it — from the phone, from the laptop —
+picks nothing when the name says enough (`.sfc` is the SNES shelf, `.z64`
+the N64's, a shelf the store already has wins over the table), picks the
+shelf for a disc image or an archive (nothing can tell an `.iso` apart),
+and **PUSH**. The file streams straight onto its shelf — never buffered, a
+1 G disc image costs a 1 G write and nothing else — under a hidden name,
+renamed into place once whole, so a seat never scans half a ROM. A title
+already on the shelf is **refused, never replaced**. Every file answers for
+itself, so a cue and its bins travel together and a wrong one does not
+sink the rest. Every seat sees it at its next scan.
+
+The store is whoever runs this program's business: `library.path` names
+where it is mounted. Files land as **this program's uid** — map that uid to
+the store's owner at the mount (an idmapped mount, a container's user
+namespace, an NFS squash) and a pushed title is the store's owner's on
+disk. The table of shelves is ES-DE's own (`tools/es-systems.py`
+regenerates it from upstream's `es_systems.xml`; 172 systems). A store
+that does not answer — the mount is away — reads as **away** on the card
+and refuses a push, never as an empty store; the shelves are re-read in
+the background so the page never waits on a mount.
+
+Watched: `rom added` / `rom refused` with the person, and
+`dejarik_library_{store_ready,titles,added_total,bytes_total}`. Nothing per
+person: a person's own shelf is a later card.
+
 ## Two truths, never collapsed
 
 The whole design is one idea. Dejarik reads **two** sources and never lets
@@ -216,6 +247,9 @@ POST   /api/projects/{name}/seats/{id}/stop        close a seat (yours; any, for
 GET    /api/projects/{name}/rooms       open rooms; POST …/rooms/{id}/stop closes one
 GET    /api/projects/{name}/links       your links (every drawer's, for admins)
 POST   /api/projects/{name}/links/sync  THE APPLIANCE: report who is linked, take what is pending
+GET    /api/projects/{name}/library     the house store's shelves (?system= one shelf's titles)
+GET    /api/projects/{name}/library/detect?file=   which shelf a name belongs on
+POST   /api/projects/{name}/library     ADMINS: push a title (multipart, streamed; never overwrites)
 GET    /links/{name}/{sidecar}/start    a person's tap: to the provider (then /links/callback)
 GET    /api/me · /healthz · /metrics · /openapi.json
 ```

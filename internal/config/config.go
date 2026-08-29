@@ -9,6 +9,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -21,18 +22,18 @@ type Config struct {
 	Listen string `yaml:"listen"`
 	// House is the operator's own word, substituted into the mark. Empty
 	// (the default) ships the panel's own name and names nobody else.
-	House    string             `yaml:"house"`
-	BaseURL  string             `yaml:"base_url"`
-	Timezone string             `yaml:"timezone"`
-	DataDir  string             `yaml:"data_dir"`
-	Auth     Auth               `yaml:"auth"`
-	Veilleur Veilleur           `yaml:"veilleur"`
+	House    string   `yaml:"house"`
+	BaseURL  string   `yaml:"base_url"`
+	Timezone string   `yaml:"timezone"`
+	DataDir  string   `yaml:"data_dir"`
+	Auth     Auth     `yaml:"auth"`
+	Veilleur Veilleur `yaml:"veilleur"`
 	// Authentik is the identity gateway's API — where a person's grants
 	// (the links) live, as attributes of their account. A service account's
 	// token, allowed to view and change users, arrives by environment. Empty
 	// = grants are kept in memory and forgotten at every restart (the panel
 	// says so at start).
-	Authentik Authentik         `yaml:"authentik"`
+	Authentik Authentik          `yaml:"authentik"`
 	Projects  map[string]Project `yaml:"projects"`
 
 	names []string
@@ -94,6 +95,12 @@ type Project struct {
 	// telling a person how long the machine will wait for them. Le Veilleur
 	// owns the number; this is the honest way to say it out loud.
 	WaitMinutes int `yaml:"wait_minutes"`
+	// Library is the house store of a Wolf project: the ROMs every seat
+	// reads, a folder per system as ES-DE lays them out, mounted into this
+	// program by whoever runs it. An ADMIN pushes a title on the panel and it
+	// streams straight onto its shelf; nothing per person. Empty path = no
+	// library card.
+	Library Library `yaml:"library"`
 	// Links are the external accounts a person may link to their drawer —
 	// the file a COMPANION beside their seats needs (Le Juke: Spotify's
 	// stored credentials, a receiver under whatever they play). Keyed by the
@@ -102,6 +109,14 @@ type Project struct {
 	// links/sync, from the Foyer's sources. Empty = nothing to link.
 	Links map[string]Link `yaml:"links"`
 }
+
+// Library is the house store: where it is mounted in this program.
+type Library struct {
+	Path string `yaml:"path"`
+}
+
+// HasLibrary reports whether the project carries a store.
+func (p Project) HasLibrary() bool { return strings.TrimSpace(p.Library.Path) != "" }
 
 // Link is one linkable account. Kind names the provider (spotify — the only
 // one today); ClientID the house's own app at that provider (Authorization
@@ -301,6 +316,9 @@ func Load(path string) (*Config, error) {
 				if p.Foyer.RenderNode == "" {
 					p.Foyer.RenderNode = "/dev/dri/renderD128"
 				}
+			}
+			if p.HasLibrary() && !filepath.IsAbs(p.Library.Path) {
+				return nil, fmt.Errorf("project %q: library.path %q is not absolute — the store is a mount, name it from the root", n, p.Library.Path)
 			}
 			for name, l := range p.Links {
 				if l.Kind == "" {

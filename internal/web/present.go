@@ -118,12 +118,15 @@ type clientsVM struct {
 	// admin. HasLinks: the project offers any at all
 	HasLinks bool
 	Links    []linkVM
-	Devices  []arcade.Device
-	Seats     []arcade.Seat
-	Refusal   arcade.Refusal
-	Rooms     []arcade.Room
-	Err       string
-	Notice    string
+	// the library: the house store's shelves and, for an admin, the push
+	HasLibrary bool
+	Library    libraryVM
+	Devices    []arcade.Device
+	Seats      []arcade.Seat
+	Refusal    arcade.Refusal
+	Rooms      []arcade.Room
+	Err        string
+	Notice     string
 }
 
 type drawerVM struct {

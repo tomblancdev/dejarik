@@ -432,6 +432,8 @@ projects:
       sources: ["203.0.113.23"]
     links:
       spotify: { client_id: "abc123", scopes: [streaming], label: "Spotify" }
+    library:
+      path: "`+t.TempDir()+`"
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}

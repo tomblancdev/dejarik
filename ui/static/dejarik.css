@@ -160,3 +160,12 @@ a:hover{color:#e2ff5a}
   background-image:repeating-linear-gradient(90deg,transparent 0 40px,rgba(200,255,0,.14) 40px 41px);background-clip:padding-box}
 .win.pin::placeholder{color:rgba(200,255,0,.25)}
 .field::placeholder{color:rgba(200,255,0,.3)}
+
+/* the library's push (0.8): a file well, a bar that fills while the push is in flight */
+.field.file{padding:12px 14px;height:auto;min-height:56px;max-width:100%;cursor:pointer}
+.field.file::file-selector-button{font:inherit;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#28330a;border:0;border-radius:3px;padding:8px 12px;margin-right:12px;cursor:pointer;background:linear-gradient(180deg,#eaff85,#a9d500 52%,#7fa200)}
+form.push select.field{max-width:100%}
+progress.push{width:100%;height:14px;appearance:none;-webkit-appearance:none;border:1px solid #22211c;border-radius:3px;background:#0a0f06;overflow:hidden}
+progress.push::-webkit-progress-bar{background:#0a0f06}
+progress.push::-webkit-progress-value{background:linear-gradient(180deg,#eaff85,#a9d500 52%,#7fa200);transition:width .2s}
+progress.push::-moz-progress-bar{background:linear-gradient(180deg,#eaff85,#a9d500 52%,#7fa200)}
